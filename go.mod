@@ -1,4 +1,4 @@
-module yx
+module github.com/yxlib/yx
 
 go 1.16
 
