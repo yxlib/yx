@@ -1,0 +1,501 @@
+// Copyright 2022 Guan Jianchang. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package yx
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+	// "syscall"
+)
+
+const (
+	LOG_BATCH_DUMP_COUNT       = 100
+	LOG_MAX_CACHE_SIZE         = 64 * 1024
+	LOG_DEFAULT_DUMP_SIZE      = 32 * 1024 * 1024
+	LOG_DEFAULT_DUMP_THRESHOLD = 32 * 1024
+	LOG_DEFAULT_DUMP_INTV      = 100
+)
+
+const LOG_DEBUG_SWITCH_FILE = "debug.sf"
+
+type LogLv int
+
+const (
+	LOG_LV_DEBUG LogLv = 0
+	LOG_LV_INFO  LogLv = 1
+	LOG_LV_WARN  LogLv = 2
+	LOG_LV_ERROR LogLv = 3
+)
+
+//========================
+//    global method
+//========================
+// Start dump log.
+// @param file, the relative/full path of a file.
+// @param dumpFileSize, max size of the dump file.
+// @param dumpThreshold, max count of logs in buffer to cause dump.
+// @param dumpIntervalMs, dump interval in millisecond.
+func StartDumpLog(file string, dumpFileSize int, dumpThreshold int, dumpIntervalMs uint32) {
+	loggerInst.StartDump(file, dumpFileSize, dumpThreshold, dumpIntervalMs)
+}
+
+// Start dump log by default params.
+// @param file, the relative/full path of a file.
+func StartDumpLogDefault(file string) {
+	loggerInst.StartDump(file, LOG_DEFAULT_DUMP_SIZE, LOG_DEFAULT_DUMP_THRESHOLD, LOG_DEFAULT_DUMP_INTV)
+}
+
+// Stop dump log.
+func StopDumpLog() {
+	loggerInst.StopDump()
+}
+
+// Set log level.
+// @param lv, the level to begin print.
+func SetLogLevel(lv LogLv) {
+	loggerInst.SetLevel(lv)
+}
+
+// Stop to PowerShell mode.
+func SetPowerShellMode() {
+	loggerInst.SetPowerShellMode()
+}
+
+//========================
+//        Logger
+//========================
+type Logger struct {
+	tag string
+}
+
+func NewLogger(tag string) *Logger {
+	return &Logger{
+		tag: tag,
+	}
+}
+
+// Print debug log.
+func (l *Logger) D(a ...interface{}) {
+	loggerInst.D(l.tag, a...)
+}
+
+// Print infomation log.
+func (l *Logger) I(a ...interface{}) {
+	loggerInst.I(l.tag, a...)
+}
+
+// Print warn log.
+func (l *Logger) W(a ...interface{}) {
+	loggerInst.W(l.tag, a...)
+}
+
+// Print error log.
+func (l *Logger) E(a ...interface{}) {
+	loggerInst.E(l.tag, a...)
+}
+
+// Print detail log.
+func (l *Logger) Detail(lv LogLv, s string) {
+	loggerInst.Detail(lv, s)
+}
+
+// // Print ln.
+// func (l *Logger) Ln() {
+// 	loggerInst.Ln()
+// }
+
+//==============================================
+//           windows color
+//==============================================
+// var (
+// 	kernel32                *syscall.LazyDLL  = syscall.NewLazyDLL(`kernel32.dll`)
+// 	SetConsoleTextAttribute *syscall.LazyProc = nil
+// 	CloseHandle             *syscall.LazyProc = nil
+// 	// proc        *syscall.LazyProc = kernel32.NewProc(`SetConsoleTextAttribute`)
+// 	// CloseHandle *syscall.LazyProc = kernel32.NewProc(`CloseHandle`)
+
+//  BgColor   int   = 0x50
+// 	FontColor Color = Color{0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf}
+// )
+
+// type Color struct {
+// 	black        int
+// 	blue         int
+// 	green        int
+// 	cyan         int
+// 	red          int
+// 	purple       int
+// 	yellow       int
+// 	light_gray   int
+// 	gray         int
+// 	light_blue   int
+// 	light_green  int
+// 	light_cyan   int
+// 	light_red    int
+// 	light_purple int
+// 	light_yellow int
+// 	white        int
+// }
+
+//==============================================
+//                   logger
+//==============================================
+type logger struct {
+	level           LogLv
+	bPowerShellMode bool
+	bDumpOpen       bool
+	strDumpFile     string
+	dumpFileSno     uint64
+	dumpFileSize    int
+	dumpThreshold   int
+	dumpIntervalMs  uint32
+	// queLogs         chan string
+	lck           *sync.Mutex
+	queLogs       []string
+	writeLogs     []string
+	evtDumpToFile *Event
+	evtStopDump   *Event
+	evtStopSucc   *Event
+}
+
+var loggerInst = &logger{
+	level:           LOG_LV_DEBUG,
+	bPowerShellMode: false,
+	bDumpOpen:       false,
+	strDumpFile:     "",
+	dumpFileSno:     0,
+	dumpFileSize:    LOG_DEFAULT_DUMP_SIZE,
+	dumpThreshold:   LOG_DEFAULT_DUMP_THRESHOLD,
+	dumpIntervalMs:  LOG_DEFAULT_DUMP_INTV,
+	// queLogs:         make(chan string, MAX_LOG_CACHE_SIZE),
+	lck:           &sync.Mutex{},
+	queLogs:       nil,
+	writeLogs:     nil,
+	evtDumpToFile: NewEvent(),
+	evtStopDump:   NewEvent(),
+	evtStopSucc:   NewEvent(),
+}
+
+func (l *logger) SetLevel(lv LogLv) {
+	l.level = lv
+}
+
+func (l *logger) SetPowerShellMode() {
+	l.bPowerShellMode = true
+}
+
+func (l *logger) D(tag string, a ...interface{}) {
+	bExist, _ := IsFileExist(LOG_DEBUG_SWITCH_FILE)
+	if !bExist && l.level > LOG_LV_DEBUG {
+		return
+	}
+
+	l.doLog(LOG_LV_DEBUG, "[DEBUG]", tag, a...)
+}
+
+func (l *logger) I(tag string, a ...interface{}) {
+	if l.level > LOG_LV_INFO {
+		return
+	}
+
+	l.doLog(LOG_LV_INFO, "[INFO ]", tag, a...)
+}
+
+func (l *logger) W(tag string, a ...interface{}) {
+	if l.level > LOG_LV_WARN {
+		return
+	}
+
+	l.doLog(LOG_LV_WARN, "[WARN ]", tag, a...)
+}
+
+func (l *logger) E(tag string, a ...interface{}) {
+	l.doLog(LOG_LV_ERROR, "[ERROR]", tag, a...)
+}
+
+func (l *logger) Detail(lv LogLv, s string) {
+	l.printLog(lv, s+"\n")
+}
+
+func (l *logger) Ln() {
+	l.printLog(LOG_LV_INFO, "\n")
+}
+
+// func (l *logger) isPowerShellMode() bool {
+// 	return l.bPowerShellMode && (kernel32 != nil)
+// }
+
+// func (l *logger) winPrint(lv LogLv, logStr string) {
+// 	if SetConsoleTextAttribute == nil {
+// 		SetConsoleTextAttribute = kernel32.NewProc(`SetConsoleTextAttribute`)
+// 	}
+
+// 	if CloseHandle == nil {
+// 		CloseHandle = kernel32.NewProc(`CloseHandle`)
+// 	}
+
+// 	color := FontColor.white
+// 	if lv == LOG_LV_ERROR {
+// 		color = FontColor.light_red
+// 	} else if lv == LOG_LV_WARN {
+// 		color = FontColor.light_yellow
+// 	}
+
+// 	handle, _, _ := SetConsoleTextAttribute.Call(uintptr(syscall.Stdout), uintptr(BgColor|color))
+// 	fmt.Print(logStr)
+// 	CloseHandle.Call(handle)
+// }
+
+func (l *logger) linuxPrint(lv LogLv, logStr string) {
+	logPrintStr := ""
+	if lv == LOG_LV_ERROR {
+		logPrintStr = fmt.Sprintf("%c[1;40;31m%s%c[0m", 0x1B, logStr, 0x1B)
+	} else if lv == LOG_LV_WARN {
+		logPrintStr = fmt.Sprintf("%c[1;40;33m%s%c[0m", 0x1B, logStr, 0x1B)
+	} else {
+		logPrintStr = logStr
+	}
+	fmt.Print(logPrintStr)
+}
+
+func (l *logger) doLog(lv LogLv, lvStr string, tag string, a ...interface{}) {
+	now := time.Now()
+	timeStr := GetFullTimeString(now, "[%s/%s/%s %s:%s:%s]")
+	msg := fmt.Sprint(a...)
+
+	logStr := ""
+	if !l.bDumpOpen {
+		logStr = fmt.Sprint(timeStr, " ", lvStr, " ["+tag+"]  ", msg, "\n")
+	} else {
+		logStr = fmt.Sprintln(timeStr, lvStr, "["+tag+"] ", msg)
+	}
+
+	l.printLog(lv, logStr)
+}
+
+func (l *logger) printLog(lv LogLv, logStr string) {
+	if !l.bDumpOpen {
+		// if l.isPowerShellMode() {
+		// 	l.winPrint(lv, logStr)
+		// } else {
+		l.linuxPrint(lv, logStr)
+		// }
+	} else {
+		l.pushLog(logStr)
+		// l.queLogs <- logStr
+		if l.needDump() {
+			l.evtDumpToFile.Send()
+		}
+	}
+}
+
+func (l *logger) pushLog(log string) {
+	l.lck.Lock()
+	defer l.lck.Unlock()
+
+	l.queLogs = append(l.queLogs, log)
+}
+
+func (l *logger) popLogs() {
+	l.lck.Lock()
+	defer l.lck.Unlock()
+
+	l.queLogs, l.writeLogs = l.writeLogs, l.queLogs
+	// logs := make([]string, len(l.queLogs))
+	// copy(logs, l.queLogs)
+	// l.queLogs = l.queLogs[0:0]
+	// return logs
+}
+
+func (l *logger) needDump() bool {
+	return len(l.queLogs) >= l.dumpThreshold
+}
+
+func (l *logger) StartDump(file string, dumpFileSize int, dumpThreshold int, dumpIntervalMs uint32) {
+	l.strDumpFile = file
+	l.dumpFileSize = dumpFileSize
+	l.dumpThreshold = dumpThreshold
+	l.dumpIntervalMs = dumpIntervalMs
+	l.queLogs = make([]string, 0, LOG_MAX_CACHE_SIZE)
+	l.writeLogs = make([]string, 0, LOG_MAX_CACHE_SIZE)
+	l.bDumpOpen = true
+	go l.dumpLoop()
+}
+
+func (l *logger) StopDump() {
+	l.bDumpOpen = false
+	l.evtStopDump.Send()
+	l.evtDumpToFile.Send()
+	l.evtStopSucc.Wait()
+	l.strDumpFile = ""
+}
+
+func (l *logger) dumpLoop() {
+	for {
+		l.evtDumpToFile.WaitUntilTimeout(l.dumpIntervalMs)
+		bEnd := l.isStopDump() // judge end first, ensure dump all logs before stop dump
+		l.dump()
+		if bEnd {
+			l.evtStopSucc.Send()
+			break
+		}
+	}
+}
+
+func (l *logger) isStopDump() bool {
+	bEnd := false
+
+	select {
+	case <-l.evtStopDump.C:
+		bEnd = true
+
+	default:
+	}
+
+	return bEnd
+}
+
+func (l *logger) dump() {
+	l.popLogs()
+	if len(l.writeLogs) == 0 {
+		return
+	}
+
+	cnt, err := l.dumpToFile(l.writeLogs)
+	if err != nil {
+		l.dumpToBak(l.writeLogs[cnt:])
+	}
+
+	l.writeLogs = l.writeLogs[0:0]
+}
+
+func (l *logger) dumpToFile(logs []string) (int, error) {
+	var err error = nil
+	totalCnt := len(logs)
+	idx := 0
+	cnt := int(0)
+
+	for {
+		// dump one file
+		bNeedRename := false
+		cnt, bNeedRename, err = l.dumpOneFile(logs[idx:])
+		idx += cnt
+		if err != nil {
+			break
+		}
+
+		// rename
+		if bNeedRename {
+			renameErr := l.renameDumpFile()
+			if renameErr != nil {
+				fmt.Println("rename dump file error: ", renameErr)
+			}
+		}
+
+		// check end
+		if idx == totalCnt {
+			break
+		}
+	}
+
+	return idx, err
+}
+
+func (l *logger) dumpOneFile(logs []string) (int, bool, error) {
+	var err error = nil
+
+	// open file
+	f, err := os.OpenFile(l.strDumpFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+	if err != nil {
+		fmt.Println("open log dump file error: ", err)
+		return 0, false, err
+	}
+
+	defer f.Close()
+
+	// dump loop
+	totalCnt := len(logs)
+	idx := 0
+	cnt := int(0)
+	bNeedRename := false
+
+	for {
+		// batch size
+		batchSize := totalCnt - idx
+		if batchSize > LOG_BATCH_DUMP_COUNT {
+			batchSize = LOG_BATCH_DUMP_COUNT
+		}
+
+		// dump
+		cnt, err = l.batchDumpToFile(logs[idx:idx+batchSize], f)
+		idx += cnt
+		if err != nil {
+			break
+		}
+
+		// check file size
+		size, sizeErr := GetFileSize(l.strDumpFile)
+		if sizeErr != nil {
+			fmt.Println("GetFileSize error: ", sizeErr)
+		} else if size >= int64(l.dumpFileSize) {
+			bNeedRename = true
+			break
+		}
+
+		// check end
+		if idx == totalCnt {
+			break
+		}
+	}
+
+	return idx, bNeedRename, err
+}
+
+func (l *logger) dumpToBak(logs []string) {
+	f, err := os.OpenFile("dump.log.bak", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+	if err != nil {
+		fmt.Println("open dump.log.bak error: ", err)
+		return
+	}
+
+	defer f.Close()
+
+	l.batchDumpToFile(logs, f)
+}
+
+func (l *logger) batchDumpToFile(logs []string, f *os.File) (int, error) {
+	w := bufio.NewWriter(f)
+	defer w.Flush()
+
+	loopCnt := len(logs)
+	for i := 0; i < loopCnt; i++ {
+		_, err := w.WriteString(logs[i])
+		if err != nil {
+			fmt.Println("batchDumpToFile w.WriteString error: ", err)
+			return i, err
+		}
+	}
+
+	return loopCnt, nil
+}
+
+func (l *logger) renameDumpFile() error {
+	l.dumpFileSno++
+	dir := path.Dir(l.strDumpFile)
+	name := path.Base(l.strDumpFile)
+	ext := path.Ext(name)
+	nameOnly := strings.TrimSuffix(name, ext)
+	now := time.Now()
+	timeStr := GetFullTimeString(now, "_%s%s%s_%s%s%s")
+	snoStr := "_" + strconv.FormatUint(l.dumpFileSno, 10)
+	newName := path.Join(dir, nameOnly+timeStr+snoStr+ext)
+	return os.Rename(l.strDumpFile, newName)
+}
