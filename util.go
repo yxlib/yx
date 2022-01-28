@@ -5,7 +5,9 @@
 package yx
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"runtime"
 	"strconv"
@@ -175,4 +177,34 @@ func IsFileExist(path string) (bool, error) {
 	}
 
 	return false, err
+}
+
+// Load config from a json file.
+// @param v, config object.
+// @param path, path of the json file.
+// @param decodeCb, a callback function to decode the content of the file.
+// @return error, error.
+func LoadJsonConf(v interface{}, path string, decodeCb func(data []byte) ([]byte, error)) error {
+	// read file
+	filePtr, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+
+	d, err := ioutil.ReadAll(filePtr)
+	if err != nil {
+		return err
+	}
+
+	// decode
+	if decodeCb != nil {
+		d, err = decodeCb(d)
+		if err != nil {
+			return err
+		}
+	}
+
+	// json unmarshal
+	err = json.Unmarshal(d, v)
+	return err
 }
