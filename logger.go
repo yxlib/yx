@@ -38,24 +38,32 @@ const (
 //========================
 //    global method
 //========================
+func StartLogger() {
+	go loggerInst.loop()
+}
+
+func StopLogger() {
+	loggerInst.stop()
+}
+
 // Start dump log.
 // @param file, the relative/full path of a file.
 // @param dumpFileSize, max size of the dump file.
 // @param dumpThreshold, max count of logs in buffer to cause dump.
 // @param dumpIntervalMs, dump interval in millisecond.
 func StartDumpLog(file string, dumpFileSize int, dumpThreshold int, dumpIntervalMs uint32) {
-	loggerInst.StartDump(file, dumpFileSize, dumpThreshold, dumpIntervalMs)
+	loggerInst.startDump(file, dumpFileSize, dumpThreshold, dumpIntervalMs)
 }
 
 // Start dump log by default params.
 // @param file, the relative/full path of a file.
 func StartDumpLogDefault(file string) {
-	loggerInst.StartDump(file, LOG_DEFAULT_DUMP_SIZE, LOG_DEFAULT_DUMP_THRESHOLD, LOG_DEFAULT_DUMP_INTV)
+	loggerInst.startDump(file, LOG_DEFAULT_DUMP_SIZE, LOG_DEFAULT_DUMP_THRESHOLD, LOG_DEFAULT_DUMP_INTV)
 }
 
 // Stop dump log.
 func StopDumpLog() {
-	loggerInst.StopDump()
+	loggerInst.stopDump()
 }
 
 // Set log level.
@@ -148,6 +156,11 @@ func (l *Logger) Detail(lv LogLv, s string) {
 //==============================================
 //                   logger
 //==============================================
+type LogInfo struct {
+	Lv     LogLv
+	LogStr string
+}
+
 type logger struct {
 	level           LogLv
 	bPowerShellMode bool
@@ -159,10 +172,10 @@ type logger struct {
 	dumpIntervalMs  uint32
 	// queLogs         chan string
 	lck           *sync.Mutex
-	queLogs       []string
-	writeLogs     []string
+	queLogs       []*LogInfo
+	writeLogs     []*LogInfo
 	evtDumpToFile *Event
-	evtStopDump   *Event
+	evtStop       *Event
 	evtStopSucc   *Event
 }
 
@@ -180,7 +193,7 @@ var loggerInst = &logger{
 	queLogs:       nil,
 	writeLogs:     nil,
 	evtDumpToFile: NewEvent(),
-	evtStopDump:   NewEvent(),
+	evtStop:       NewEvent(),
 	evtStopSucc:   NewEvent(),
 }
 
@@ -229,6 +242,104 @@ func (l *logger) Ln() {
 	l.printLog(LOG_LV_INFO, "\n")
 }
 
+func (l *logger) doLog(lv LogLv, lvStr string, tag string, a ...interface{}) {
+	now := time.Now()
+	timeStr := GetFullTimeString(now, "[%s/%s/%s %s:%s:%s]")
+	msg := fmt.Sprint(a...)
+
+	logStr := ""
+	if !l.bDumpOpen {
+		logStr = fmt.Sprint(timeStr, " ", lvStr, " ["+tag+"]  ", msg, "\n")
+	} else {
+		logStr = fmt.Sprintln(timeStr, lvStr, "["+tag+"] ", msg)
+	}
+
+	l.printLog(lv, logStr)
+}
+
+func (l *logger) printLog(lv LogLv, logStr string) {
+	l.pushLog(lv, logStr)
+
+	if l.bDumpOpen && l.needDump() {
+		l.evtDumpToFile.Send()
+	}
+}
+
+func (l *logger) pushLog(lv LogLv, log string) {
+	l.lck.Lock()
+	defer l.lck.Unlock()
+
+	info := &LogInfo{
+		Lv:     lv,
+		LogStr: log,
+	}
+	l.queLogs = append(l.queLogs, info)
+}
+
+func (l *logger) popLogs() {
+	l.lck.Lock()
+	defer l.lck.Unlock()
+
+	l.queLogs, l.writeLogs = l.writeLogs, l.queLogs
+	// logs := make([]string, len(l.queLogs))
+	// copy(logs, l.queLogs)
+	// l.queLogs = l.queLogs[0:0]
+	// return logs
+}
+
+func (l *logger) loop() {
+	for {
+		bEnd := false
+		if !l.bDumpOpen {
+			l.printConsoleLogs()
+			bEnd = l.isStop()
+		} else {
+			l.evtDumpToFile.WaitUntilTimeout(l.dumpIntervalMs)
+			bEnd = l.isStop() // judge end first, ensure dump all logs before stop dump
+			l.dump()
+		}
+
+		if bEnd {
+			l.evtStopSucc.Send()
+			break
+		}
+	}
+}
+
+func (l *logger) stop() {
+	l.evtStop.Send()
+	l.evtDumpToFile.Send()
+	l.evtStopSucc.Wait()
+}
+
+func (l *logger) isStop() bool {
+	bEnd := false
+
+	select {
+	case <-l.evtStop.C:
+		bEnd = true
+
+	default:
+	}
+
+	return bEnd
+}
+
+func (l *logger) printConsoleLogs() {
+	l.popLogs()
+	if len(l.writeLogs) == 0 {
+		return
+	}
+
+	for _, info := range l.writeLogs {
+		// if l.isPowerShellMode() {
+		// 	l.winPrint(info.Lv, info.LogStr)
+		// } else {
+		l.linuxPrint(info.Lv, info.LogStr)
+		// }
+	}
+}
+
 // func (l *logger) isPowerShellMode() bool {
 // 	return l.bPowerShellMode && (kernel32 != nil)
 // }
@@ -266,101 +377,27 @@ func (l *logger) linuxPrint(lv LogLv, logStr string) {
 	fmt.Print(logPrintStr)
 }
 
-func (l *logger) doLog(lv LogLv, lvStr string, tag string, a ...interface{}) {
-	now := time.Now()
-	timeStr := GetFullTimeString(now, "[%s/%s/%s %s:%s:%s]")
-	msg := fmt.Sprint(a...)
-
-	logStr := ""
-	if !l.bDumpOpen {
-		logStr = fmt.Sprint(timeStr, " ", lvStr, " ["+tag+"]  ", msg, "\n")
-	} else {
-		logStr = fmt.Sprintln(timeStr, lvStr, "["+tag+"] ", msg)
-	}
-
-	l.printLog(lv, logStr)
-}
-
-func (l *logger) printLog(lv LogLv, logStr string) {
-	if !l.bDumpOpen {
-		// if l.isPowerShellMode() {
-		// 	l.winPrint(lv, logStr)
-		// } else {
-		l.linuxPrint(lv, logStr)
-		// }
-	} else {
-		l.pushLog(logStr)
-		// l.queLogs <- logStr
-		if l.needDump() {
-			l.evtDumpToFile.Send()
-		}
-	}
-}
-
-func (l *logger) pushLog(log string) {
-	l.lck.Lock()
-	defer l.lck.Unlock()
-
-	l.queLogs = append(l.queLogs, log)
-}
-
-func (l *logger) popLogs() {
-	l.lck.Lock()
-	defer l.lck.Unlock()
-
-	l.queLogs, l.writeLogs = l.writeLogs, l.queLogs
-	// logs := make([]string, len(l.queLogs))
-	// copy(logs, l.queLogs)
-	// l.queLogs = l.queLogs[0:0]
-	// return logs
-}
-
-func (l *logger) needDump() bool {
-	return len(l.queLogs) >= l.dumpThreshold
-}
-
-func (l *logger) StartDump(file string, dumpFileSize int, dumpThreshold int, dumpIntervalMs uint32) {
+func (l *logger) startDump(file string, dumpFileSize int, dumpThreshold int, dumpIntervalMs uint32) {
 	l.strDumpFile = file
 	l.dumpFileSize = dumpFileSize
 	l.dumpThreshold = dumpThreshold
 	l.dumpIntervalMs = dumpIntervalMs
-	l.queLogs = make([]string, 0, LOG_MAX_CACHE_SIZE)
-	l.writeLogs = make([]string, 0, LOG_MAX_CACHE_SIZE)
+	l.queLogs = make([]*LogInfo, 0, LOG_MAX_CACHE_SIZE)
+	l.writeLogs = make([]*LogInfo, 0, LOG_MAX_CACHE_SIZE)
 	l.bDumpOpen = true
-	go l.dumpLoop()
+	// go l.dumpLoop()
 }
 
-func (l *logger) StopDump() {
+func (l *logger) stopDump() {
 	l.bDumpOpen = false
-	l.evtStopDump.Send()
+	// l.evtStop.Send()
 	l.evtDumpToFile.Send()
-	l.evtStopSucc.Wait()
-	l.strDumpFile = ""
+	// l.evtStopSucc.Wait()
+	// l.strDumpFile = ""
 }
 
-func (l *logger) dumpLoop() {
-	for {
-		l.evtDumpToFile.WaitUntilTimeout(l.dumpIntervalMs)
-		bEnd := l.isStopDump() // judge end first, ensure dump all logs before stop dump
-		l.dump()
-		if bEnd {
-			l.evtStopSucc.Send()
-			break
-		}
-	}
-}
-
-func (l *logger) isStopDump() bool {
-	bEnd := false
-
-	select {
-	case <-l.evtStopDump.C:
-		bEnd = true
-
-	default:
-	}
-
-	return bEnd
+func (l *logger) needDump() bool {
+	return len(l.queLogs) >= l.dumpThreshold
 }
 
 func (l *logger) dump() {
@@ -377,7 +414,7 @@ func (l *logger) dump() {
 	l.writeLogs = l.writeLogs[0:0]
 }
 
-func (l *logger) dumpToFile(logs []string) (int, error) {
+func (l *logger) dumpToFile(logs []*LogInfo) (int, error) {
 	var err error = nil
 	totalCnt := len(logs)
 	idx := 0
@@ -409,7 +446,7 @@ func (l *logger) dumpToFile(logs []string) (int, error) {
 	return idx, err
 }
 
-func (l *logger) dumpOneFile(logs []string) (int, bool, error) {
+func (l *logger) dumpOneFile(logs []*LogInfo) (int, bool, error) {
 	var err error = nil
 
 	// open file
@@ -459,7 +496,7 @@ func (l *logger) dumpOneFile(logs []string) (int, bool, error) {
 	return idx, bNeedRename, err
 }
 
-func (l *logger) dumpToBak(logs []string) {
+func (l *logger) dumpToBak(logs []*LogInfo) {
 	f, err := os.OpenFile("dump.log.bak", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 	if err != nil {
 		fmt.Println("open dump.log.bak error: ", err)
@@ -471,13 +508,13 @@ func (l *logger) dumpToBak(logs []string) {
 	l.batchDumpToFile(logs, f)
 }
 
-func (l *logger) batchDumpToFile(logs []string, f *os.File) (int, error) {
+func (l *logger) batchDumpToFile(logs []*LogInfo, f *os.File) (int, error) {
 	w := bufio.NewWriter(f)
 	defer w.Flush()
 
 	loopCnt := len(logs)
 	for i := 0; i < loopCnt; i++ {
-		_, err := w.WriteString(logs[i])
+		_, err := w.WriteString(logs[i].LogStr)
 		if err != nil {
 			fmt.Println("batchDumpToFile w.WriteString error: ", err)
 			return i, err
