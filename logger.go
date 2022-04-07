@@ -26,7 +26,7 @@ const (
 
 const LOG_DEBUG_SWITCH_FILE = "debug.sf"
 
-type LogLv int
+type LogLv = int
 
 const (
 	LOG_LV_DEBUG LogLv = 0
@@ -72,9 +72,33 @@ func SetLogLevel(lv LogLv) {
 	loggerInst.SetLevel(lv)
 }
 
-// Stop to PowerShell mode.
+// Set to PowerShell mode.
 func SetPowerShellMode() {
 	loggerInst.SetPowerShellMode()
+}
+
+//========================
+//    log config
+//========================
+type LogConf struct {
+	Level           int    `json:"level"`
+	IsPowerShellRun bool   `json:"power_shell_run"`
+	IsDump          bool   `json:"is_dump"`
+	DumpPath        string `json:"dump_path"`
+	DumpFileSize    int    `json:"dump_file_size"`
+	DumpThreshold   int    `json:"dump_threshold"`
+	DumpInterval    uint32 `json:"dump_interval"`
+}
+
+func ConfigLogger(cfg *LogConf) {
+	SetLogLevel(cfg.Level)
+	if cfg.IsPowerShellRun {
+		SetPowerShellMode()
+	}
+
+	if cfg.IsDump {
+		StartDumpLog(cfg.DumpPath, cfg.DumpFileSize, cfg.DumpThreshold, cfg.DumpInterval)
+	}
 }
 
 //========================

@@ -1,0 +1,9 @@
+{
+    "level" : 1,
+    "power_shell_run" : false,
+    "is_dump" : false,
+    "dump_path" : "gateway.log",
+    "dump_file_size" : 4096,
+    "dump_threshold" : 32,
+    "dump_interval" : 100
+}
