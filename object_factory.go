@@ -102,16 +102,19 @@ func NewObjectFactory() *ObjectFactory {
 // @param initReuseCnt, the init count in the pool.
 // @param maxPoolCapacity, the max count in the pool.
 // @return error, the error.
-func (f *ObjectFactory) RegisterObject(obj Reuseable, initReuseCnt uint64, maxPoolCapacity uint64) error {
-	if obj == nil {
-		return ErrObjFactObjIsNil
+func (f *ObjectFactory) RegisterObject(obj Reuseable, initReuseCnt uint64, maxPoolCapacity uint64) (string, error) {
+	name, err := GetClassReflectName(obj)
+	if err != nil {
+		return "", ErrObjFactObjIsNil
 	}
 
 	t := reflect.TypeOf(obj)
-	t = t.Elem()
-	path := t.PkgPath()
-	name := path + "." + t.Name()
-	return f.createWorkshop(name, t, initReuseCnt, maxPoolCapacity)
+	err = f.createWorkshop(name, t, initReuseCnt, maxPoolCapacity)
+	if err != nil {
+		return "", err
+	}
+
+	return name, nil
 }
 
 // Get reflect type by the name.

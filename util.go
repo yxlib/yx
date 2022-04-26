@@ -6,12 +6,19 @@ package yx
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
+)
+
+var (
+	ErrUtilObjIsNil = errors.New("object is nil")
 )
 
 // Get the string of full time.
@@ -207,4 +214,53 @@ func LoadJsonConf(v interface{}, path string, decodeCb func(data []byte) ([]byte
 	// json unmarshal
 	err = json.Unmarshal(d, v)
 	return err
+}
+
+func GetClassReflectName(obj Reuseable) (string, error) {
+	if obj == nil {
+		return "", ErrUtilObjIsNil
+	}
+
+	t := reflect.TypeOf(obj)
+	t = t.Elem()
+	path := t.PkgPath()
+	name := path + "." + t.Name()
+	return name, nil
+}
+
+func GetFullPackageName(classReflectName string) string {
+	idx := strings.LastIndex(classReflectName, ".")
+	if idx < 0 {
+		return ""
+	}
+
+	packName := classReflectName[:idx]
+	return packName
+}
+
+func GetFilePackageName(fullPackName string) string {
+	idx := strings.LastIndex(fullPackName, "/")
+	if idx < 0 {
+		return fullPackName
+	}
+
+	return fullPackName[idx+1:]
+}
+
+func GetClassName(classReflectName string) string {
+	idx := strings.LastIndex(classReflectName, ".")
+	if idx < 0 {
+		return classReflectName
+	}
+
+	return classReflectName[idx+1:]
+}
+
+func GetFilePackageClassName(classReflectName string) string {
+	idx := strings.LastIndex(classReflectName, "/")
+	if idx < 0 {
+		return classReflectName
+	}
+
+	return classReflectName[idx+1:]
 }
