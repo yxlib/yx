@@ -363,6 +363,8 @@ func (l *logger) printConsoleLogs() {
 		l.linuxPrint(info.Lv, info.LogStr)
 		// }
 	}
+
+	l.writeLogs = l.writeLogs[0:0]
 }
 
 // func (l *logger) isPowerShellMode() bool {
