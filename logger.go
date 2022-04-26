@@ -352,6 +352,7 @@ func (l *logger) isStop() bool {
 func (l *logger) printConsoleLogs() {
 	l.popLogs()
 	if len(l.writeLogs) == 0 {
+		<-time.After(time.Millisecond * 10)
 		return
 	}
 
