@@ -20,14 +20,12 @@ var (
 type objectWorkshop struct {
 	objType reflect.Type
 	pool    *ObjectPool
-	lckPool *sync.Mutex
 }
 
 func newObjectWorkshop(t reflect.Type, initReuseCnt uint64, maxCnt uint64) *objectWorkshop {
 	w := &objectWorkshop{
 		objType: t,
 		pool:    NewObjectPool(maxCnt),
-		lckPool: &sync.Mutex{},
 	}
 
 	for i := 0; i < int(initReuseCnt); i++ {
@@ -69,16 +67,10 @@ func (w *objectWorkshop) reuseObject(v Reuseable) error {
 }
 
 func (w *objectWorkshop) popFromPool() (interface{}, bool) {
-	w.lckPool.Lock()
-	defer w.lckPool.Unlock()
-
 	return w.pool.Get()
 }
 
 func (w *objectWorkshop) pushToPool(v Reuseable) error {
-	w.lckPool.Lock()
-	defer w.lckPool.Unlock()
-
 	return w.pool.Reuse(v)
 }
 

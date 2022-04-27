@@ -8,7 +8,6 @@ import "errors"
 
 var (
 	ErrObjPoolObjNil = errors.New("object is nil")
-	ErrObjPoolFull   = errors.New("pool is full")
 )
 
 type Reuseable interface {
@@ -16,13 +15,13 @@ type Reuseable interface {
 }
 
 type ObjectPool struct {
-	queue  *LinkedQueue
+	queue  Queue
 	maxCnt uint64
 }
 
 func NewObjectPool(maxCnt uint64) *ObjectPool {
 	return &ObjectPool{
-		queue:  NewLinkedQueue(),
+		queue:  NewSyncLimitQueue(maxCnt),
 		maxCnt: maxCnt,
 	}
 }
@@ -31,10 +30,6 @@ func NewObjectPool(maxCnt uint64) *ObjectPool {
 // @return Reuseable, the object.
 // @return bool, true mean success, false mean failed.
 func (p *ObjectPool) Get() (Reuseable, bool) {
-	if p.queue.GetSize() == 0 {
-		return nil, false
-	}
-
 	item, err := p.queue.Dequeue()
 	if err != nil {
 		return nil, false
@@ -54,10 +49,6 @@ func (p *ObjectPool) Get() (Reuseable, bool) {
 func (p *ObjectPool) Reuse(obj Reuseable) error {
 	if obj == nil {
 		return ErrObjPoolObjNil
-	}
-
-	if p.queue.GetSize() >= p.maxCnt {
-		return ErrObjPoolFull
 	}
 
 	obj.Reset()

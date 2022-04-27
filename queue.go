@@ -11,6 +11,7 @@ import (
 
 var (
 	ErrQueEmptyQueue = errors.New("empty queue")
+	ErrQueFullQueue  = errors.New("full queue")
 )
 
 //========================
@@ -140,4 +141,30 @@ func (q *SyncLinkedQueue) GetSize() uint64 {
 	defer q.lck.Unlock()
 
 	return q.que.GetSize()
+}
+
+//========================
+//    SyncLimitQueue
+//========================
+type SyncLimitQueue struct {
+	*SyncLinkedQueue
+	maxSize uint64
+}
+
+func NewSyncLimitQueue(maxSize uint64) *SyncLimitQueue {
+	return &SyncLimitQueue{
+		SyncLinkedQueue: NewSyncLinkedQueue(),
+		maxSize:         maxSize,
+	}
+}
+
+func (q *SyncLimitQueue) Enqueue(item interface{}) error {
+	q.lck.Lock()
+	defer q.lck.Unlock()
+
+	if q.que.GetSize() == q.maxSize {
+		return ErrQueFullQueue
+	}
+
+	return q.que.Enqueue(item)
 }
