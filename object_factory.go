@@ -17,6 +17,10 @@ var (
 	ErrObjFactNotTheSameType = errors.New("not the same type")
 )
 
+type Reuseable interface {
+	Reset()
+}
+
 type objectWorkshop struct {
 	objType reflect.Type
 	pool    *sync.Pool
