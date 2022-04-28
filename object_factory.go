@@ -17,36 +17,58 @@ var (
 	ErrObjFactNotTheSameType = errors.New("not the same type")
 )
 
-type Reuseable interface {
-	Reset()
-}
+// type Reuseable interface {
+// 	Reset()
+// }
 
 type objectWorkshop struct {
 	objType reflect.Type
 	pool    *sync.Pool
+	queue   Queue
 }
 
-func newObjectWorkshop(t reflect.Type, newFunc func() interface{}) *objectWorkshop {
-	return &objectWorkshop{
+func newObjectWorkshop(t reflect.Type, newFunc func() interface{}, maxCnt uint64) *objectWorkshop {
+	w := &objectWorkshop{
 		objType: t,
-		pool: &sync.Pool{
-			New: newFunc,
-		},
+		pool:    nil,
 	}
+
+	if newFunc != nil {
+		w.pool = &sync.Pool{
+			New: newFunc,
+		}
+	} else {
+		w.queue = NewSyncLimitQueue(maxCnt)
+	}
+
+	return w
 }
 
 func (w *objectWorkshop) createObject() interface{} {
-	return w.pool.Get()
+	if w.pool != nil {
+		return w.pool.Get()
+	}
+
+	obj, err := w.queue.Dequeue()
+	if err != nil {
+		v := reflect.New(w.objType)
+		obj = v.Interface()
+	}
+
+	return obj
 }
 
-func (w *objectWorkshop) reuseObject(v Reuseable) error {
+func (w *objectWorkshop) reuseObject(v interface{}) error {
 	if v == nil {
 		return ErrObjFactObjIsNil
 	}
 
-	v.Reset()
-	w.pool.Put(v)
-	return nil
+	if w.pool != nil {
+		w.pool.Put(v)
+		return nil
+	}
+
+	return w.queue.Enqueue(v)
 }
 
 //=========================
@@ -69,14 +91,14 @@ func NewObjectFactory() *ObjectFactory {
 // @param initReuseCnt, the init count in the pool.
 // @param maxPoolCapacity, the max count in the pool.
 // @return error, the error.
-func (f *ObjectFactory) RegisterObject(obj Reuseable, newFunc func() interface{}) (string, error) {
+func (f *ObjectFactory) RegisterObject(obj interface{}, newFunc func() interface{}, maxPoolCapacity uint64) (string, error) {
 	name, err := GetClassReflectName(obj)
 	if err != nil {
 		return "", ErrObjFactObjIsNil
 	}
 
 	t := reflect.TypeOf(obj)
-	f.createWorkshop(name, t, newFunc)
+	f.createWorkshop(name, t, newFunc, maxPoolCapacity)
 	return name, nil
 }
 
@@ -110,7 +132,7 @@ func (f *ObjectFactory) CreateObject(name string) (interface{}, error) {
 // @param v, the object.
 // @param name, the name.
 // @return error, the error.
-func (f *ObjectFactory) ReuseObject(v Reuseable, name string) error {
+func (f *ObjectFactory) ReuseObject(v interface{}, name string) error {
 	w, ok := f.getWorkshop(name)
 	if !ok {
 		return ErrObjFactWsNotExist
@@ -119,13 +141,13 @@ func (f *ObjectFactory) ReuseObject(v Reuseable, name string) error {
 	return w.reuseObject(v)
 }
 
-func (f *ObjectFactory) createWorkshop(name string, t reflect.Type, newFunc func() interface{}) {
+func (f *ObjectFactory) createWorkshop(name string, t reflect.Type, newFunc func() interface{}, maxPoolCapacity uint64) {
 	f.lckWs.Lock()
 	defer f.lckWs.Unlock()
 
 	_, ok := f.mapName2Workshop[name]
 	if !ok {
-		f.mapName2Workshop[name] = newObjectWorkshop(t, newFunc)
+		f.mapName2Workshop[name] = newObjectWorkshop(t, newFunc, maxPoolCapacity)
 	}
 }
 

@@ -216,7 +216,7 @@ func LoadJsonConf(v interface{}, path string, decodeCb func(data []byte) ([]byte
 	return err
 }
 
-func GetClassReflectName(obj Reuseable) (string, error) {
+func GetClassReflectName(obj interface{}) (string, error) {
 	if obj == nil {
 		return "", ErrUtilObjIsNil
 	}
