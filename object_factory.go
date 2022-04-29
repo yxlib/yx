@@ -92,12 +92,13 @@ func NewObjectFactory() *ObjectFactory {
 // @param maxPoolCapacity, the max count in the pool.
 // @return error, the error.
 func (f *ObjectFactory) RegisterObject(obj interface{}, newFunc func() interface{}, maxPoolCapacity uint64) (string, error) {
-	name, err := GetClassReflectName(obj)
-	if err != nil {
+	if obj == nil {
 		return "", ErrObjFactObjIsNil
 	}
 
 	t := reflect.TypeOf(obj)
+	t = t.Elem()
+	name := GetReflectNameByType(t)
 	f.createWorkshop(name, t, newFunc, maxPoolCapacity)
 	return name, nil
 }

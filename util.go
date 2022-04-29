@@ -223,9 +223,14 @@ func GetClassReflectName(obj interface{}) (string, error) {
 
 	t := reflect.TypeOf(obj)
 	t = t.Elem()
+	name := GetReflectNameByType(t)
+	return name, nil
+}
+
+func GetReflectNameByType(t reflect.Type) string {
 	path := t.PkgPath()
 	name := path + "." + t.Name()
-	return name, nil
+	return name
 }
 
 func GetFullPackageName(classReflectName string) string {
