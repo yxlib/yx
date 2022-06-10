@@ -315,8 +315,8 @@ func (l *logger) loop() {
 	for {
 		bEnd := false
 		if !l.bDumpOpen {
-			l.printConsoleLogs()
 			bEnd = l.isStop()
+			l.printConsoleLogs()
 		} else {
 			l.evtDumpToFile.WaitUntilTimeout(l.dumpIntervalMs)
 			bEnd = l.isStop() // judge end first, ensure dump all logs before stop dump
