@@ -131,27 +131,31 @@ func RsaSign(origData []byte, priKey []byte) ([]byte, error) {
 	return signData, err
 }
 
-func RsaVerify(origData []byte, signData []byte, pubKey []byte) error {
+func RsaVerify(origData []byte, signData []byte, pubKey []byte) (bool, error) {
 	if len(origData) == 0 {
-		return ErrRsaDataLenZero
+		return false, ErrRsaDataLenZero
 	}
 
 	if len(signData) == 0 {
-		return ErrRsaDataLenZero
+		return false, ErrRsaDataLenZero
 	}
 
 	if len(pubKey) == 0 {
-		return ErrRsaKeyLenZero
+		return false, ErrRsaKeyLenZero
 	}
 
 	publicKey, err := x509.ParsePKCS1PublicKey(pubKey)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	hashed := sha512.Sum512(origData)
 	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA512, hashed[:], signData)
-	return err
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func RsaSignPem(origData []byte, pemPriKey string) ([]byte, error) {
@@ -167,17 +171,17 @@ func RsaSignPem(origData []byte, pemPriKey string) ([]byte, error) {
 	return RsaSign(origData, block.Bytes)
 }
 
-func RsaVerifyPem(origData []byte, signData []byte, pemPubKey string) error {
+func RsaVerifyPem(origData []byte, signData []byte, pemPubKey string) (bool, error) {
 	if len(origData) == 0 {
-		return ErrRsaDataLenZero
+		return false, ErrRsaDataLenZero
 	}
 
 	if len(signData) == 0 {
-		return ErrRsaDataLenZero
+		return false, ErrRsaDataLenZero
 	}
 
 	if len(pemPubKey) == 0 {
-		return ErrRsaKeyLenZero
+		return false, ErrRsaKeyLenZero
 	}
 
 	block, _ := pem.Decode([]byte(pemPubKey))
