@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -235,7 +234,7 @@ func (l *logger) D(tag string, a ...interface{}) {
 		return
 	}
 
-	l.doLog(LOG_LV_DEBUG, "[DEBUG]", tag, a...)
+	l.doLog(LOG_LV_DEBUG, "DEBUG", tag, a...)
 }
 
 func (l *logger) I(tag string, a ...interface{}) {
@@ -243,7 +242,7 @@ func (l *logger) I(tag string, a ...interface{}) {
 		return
 	}
 
-	l.doLog(LOG_LV_INFO, "[INFO ]", tag, a...)
+	l.doLog(LOG_LV_INFO, "INFO ", tag, a...)
 }
 
 func (l *logger) W(tag string, a ...interface{}) {
@@ -251,11 +250,11 @@ func (l *logger) W(tag string, a ...interface{}) {
 		return
 	}
 
-	l.doLog(LOG_LV_WARN, "[WARN ]", tag, a...)
+	l.doLog(LOG_LV_WARN, "WARN ", tag, a...)
 }
 
 func (l *logger) E(tag string, a ...interface{}) {
-	l.doLog(LOG_LV_ERROR, "[ERROR]", tag, a...)
+	l.doLog(LOG_LV_ERROR, "ERROR", tag, a...)
 }
 
 func (l *logger) Detail(lv LogLv, s string) {
@@ -268,17 +267,47 @@ func (l *logger) Ln() {
 
 func (l *logger) doLog(lv LogLv, lvStr string, tag string, a ...interface{}) {
 	now := time.Now()
-	timeStr := GetFullTimeString(now, "[%s/%s/%s %s:%s:%s]")
+	// timeStr := GetFullTimeString(now, "[%s/%s/%s %s:%s:%s]")
 	msg := fmt.Sprint(a...)
 
-	logStr := ""
-	if !l.bDumpOpen {
-		logStr = fmt.Sprint(timeStr, " ", lvStr, " ["+tag+"]  ", msg, "\n")
-	} else {
-		logStr = fmt.Sprintln(timeStr, lvStr, "["+tag+"] ", msg)
-	}
+	// logStr := ""
+	// if !l.bDumpOpen {
+	// 	logStr = fmt.Sprint(timeStr, " ", lvStr, " ["+tag+"]  ", msg, "\n")
+	// } else {
+	// 	logStr = fmt.Sprintln(timeStr, lvStr, "["+tag+"] ", msg)
+	// }
 
+	logStr := l.buildLogStr(now, lvStr, tag, msg)
 	l.printLog(lv, logStr)
+}
+
+func (l *logger) buildLogStr(t time.Time, lvStr string, tag string, msg string) string {
+	builder := &strings.Builder{}
+
+	// time
+	builder.WriteRune('[')
+	FormatTimeStr("YY/MM/DD hh:mm:ss", t, builder)
+	builder.WriteRune(']')
+	builder.WriteRune(' ')
+
+	// level
+	builder.WriteRune('[')
+	builder.WriteString(lvStr)
+	builder.WriteRune(']')
+	builder.WriteRune(' ')
+
+	// tag
+	builder.WriteRune('[')
+	builder.WriteString(tag)
+	builder.WriteRune(']')
+	builder.WriteRune(' ')
+	builder.WriteRune(' ')
+
+	// msg
+	builder.WriteString(msg)
+	builder.WriteRune('\n')
+
+	return builder.String()
 }
 
 func (l *logger) printLog(lv LogLv, logStr string) {
@@ -477,7 +506,8 @@ func (l *logger) dumpOneFile(logs []*LogInfo) (int, bool, error) {
 	var err error = nil
 
 	// open file
-	f, err := os.OpenFile(l.strDumpFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+	fileName := l.strDumpFile
+	f, err := os.OpenFile(fileName, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 	if err != nil {
 		fmt.Println("open log dump file error: ", err)
 		return 0, false, err
@@ -506,7 +536,7 @@ func (l *logger) dumpOneFile(logs []*LogInfo) (int, bool, error) {
 		}
 
 		// check file size
-		size, sizeErr := GetFileSize(l.strDumpFile)
+		size, sizeErr := GetFileSize(fileName)
 		if sizeErr != nil {
 			fmt.Println("GetFileSize error: ", sizeErr)
 		} else if size >= int64(l.dumpFileSize) {
@@ -557,9 +587,19 @@ func (l *logger) renameDumpFile() error {
 	name := path.Base(l.strDumpFile)
 	ext := path.Ext(name)
 	nameOnly := strings.TrimSuffix(name, ext)
+
+	builder := &strings.Builder{}
+	builder.WriteString(nameOnly)
+
 	now := time.Now()
-	timeStr := GetFullTimeString(now, "_%s%s%s_%s%s%s")
-	snoStr := "_" + strconv.FormatUint(l.dumpFileSno, 10)
-	newName := path.Join(dir, nameOnly+timeStr+snoStr+ext)
+	FormatTimeStr("_YYMMDD_hhmmss_", now, builder)
+	FormatUint(l.dumpFileSno, 5, false, builder)
+	builder.WriteString(ext)
+	newName := path.Join(dir, builder.String())
+
+	// timeStr := GetFullTimeString(now, "_%s%s%s_%s%s%s")
+	// timeStr, _ := FormatTimeStr("_YYMMDD_hhmmss", now, nil)
+	// snoStr := "_" + strconv.FormatUint(l.dumpFileSno, 10)
+	// newName := path.Join(dir, nameOnly+timeStr+snoStr+ext)
 	return os.Rename(l.strDumpFile, newName)
 }

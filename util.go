@@ -7,114 +7,209 @@ package yx
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"reflect"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 )
 
 var (
-	ErrUtilObjIsNil = errors.New("object is nil")
+	ErrUtilObjIsNil    = errors.New("object is nil")
+	ErrWrongTimeFormat = errors.New("wrong time format")
 )
 
-// Get the string of full time.
+// Format the string of time.
+// @param format, format of the string with YY MM DD hh mm ss.
 // @param t, the time object to format.
-// @param format, format of the string.
-// @return the format string of full time.
-func GetFullTimeString(t time.Time, format string) string {
-	// t := time.Now()
-
-	yy := t.Year()
-	yyStr := strconv.Itoa(yy)
-
-	mm := int(t.Month())
-	mmStr := strconv.Itoa(mm)
-	if mm < 10 {
-		mmStr = "0" + mmStr
+// @param builder, a string builder. if not nil, only build string, not return
+// @return string, the format string of time.
+// @return error, the error
+func FormatTimeStr(format string, t time.Time, builder *strings.Builder) (string, error) {
+	bNeedReturnString := (builder == nil)
+	if bNeedReturnString {
+		builder = &strings.Builder{}
 	}
 
-	dd := t.Day()
-	ddStr := strconv.Itoa(dd)
-	if dd < 10 {
-		ddStr = "0" + ddStr
+	startIdx := -1
+	YYIdx := strings.Index(format, "YY")
+	if YYIdx >= 0 {
+		startIdx = YYIdx
 	}
 
-	h := t.Hour()
-	hStr := strconv.Itoa(h)
-	if h < 10 {
-		hStr = "0" + hStr
+	MMIdx := strings.Index(format, "MM")
+	if MMIdx >= 0 && startIdx == -1 {
+		startIdx = MMIdx
 	}
 
-	m := t.Minute()
-	mStr := strconv.Itoa(m)
-	if m < 10 {
-		mStr = "0" + mStr
+	DDIdx := strings.Index(format, "DD")
+	if DDIdx >= 0 && startIdx == -1 {
+		startIdx = DDIdx
 	}
 
-	s := t.Second()
-	sStr := strconv.Itoa(s)
-	if s < 10 {
-		sStr = "0" + sStr
+	hhIdx := strings.Index(format, "hh")
+	if hhIdx >= 0 && startIdx == -1 {
+		startIdx = hhIdx
 	}
 
-	return fmt.Sprintf(format, yyStr, mmStr, ddStr, hStr, mStr, sStr)
+	mmIdx := strings.Index(format, "mm")
+	if mmIdx >= 0 && startIdx == -1 {
+		startIdx = mmIdx
+	}
+
+	ssIdx := strings.Index(format, "ss")
+	if ssIdx >= 0 && startIdx == -1 {
+		startIdx = ssIdx
+	}
+
+	if startIdx < 0 {
+		return "", ErrWrongTimeFormat
+	}
+
+	if startIdx > 0 {
+		builder.WriteString(format[:startIdx])
+	}
+
+	// year
+	if YYIdx >= 0 {
+		yy := t.Year()
+		FormatInt(int64(yy), 4, false, builder)
+		startIdx = YYIdx + 2
+	}
+
+	// month
+	if MMIdx >= 0 {
+		if startIdx < MMIdx {
+			builder.WriteString(format[startIdx:MMIdx])
+		}
+
+		mm := int(t.Month())
+		FormatInt(int64(mm), 2, true, builder)
+		startIdx = MMIdx + 2
+	}
+
+	// day
+	if DDIdx >= 0 {
+		if startIdx < DDIdx {
+			builder.WriteString(format[startIdx:DDIdx])
+		}
+
+		dd := t.Day()
+		FormatInt(int64(dd), 2, true, builder)
+		startIdx = DDIdx + 2
+	}
+
+	// hour
+	if hhIdx >= 0 {
+		if startIdx < hhIdx {
+			builder.WriteString(format[startIdx:hhIdx])
+		}
+
+		h := t.Hour()
+		FormatInt(int64(h), 2, true, builder)
+		startIdx = hhIdx + 2
+	}
+
+	// minute
+	if mmIdx >= 0 {
+		if startIdx < mmIdx {
+			builder.WriteString(format[startIdx:mmIdx])
+		}
+
+		m := t.Minute()
+		FormatInt(int64(m), 2, true, builder)
+		startIdx = mmIdx + 2
+	}
+
+	// second
+	if ssIdx >= 0 {
+		if startIdx < ssIdx {
+			builder.WriteString(format[startIdx:ssIdx])
+		}
+
+		s := t.Second()
+		FormatInt(int64(s), 2, true, builder)
+		startIdx = ssIdx + 2
+	}
+
+	if startIdx < len(format) {
+		builder.WriteString(format[startIdx:])
+	}
+
+	if bNeedReturnString {
+		return builder.String(), nil
+	}
+
+	return "", nil
 }
 
-// Get the string of date.
-// @param t, the time object to format.
-// @param format, format of the string.
-// @return the format string of date.
-func GetDateString(t time.Time, format string) string {
-	// t := time.Now()
-
-	yy := t.Year()
-	yyStr := strconv.Itoa(yy)
-
-	mm := int(t.Month())
-	mmStr := strconv.Itoa(mm)
-	if mm < 10 {
-		mmStr = "0" + mmStr
+// Format integer.
+// @param num, the number to format.
+// @param maxLength, the max length in decimal.
+// @param bFillZero, is fill zero to prefix.
+// @param builder, a string builder. if not nil, only build string, not return
+// @return string, the format string of time.
+func FormatInt(num int64, maxLength uint32, bFillZero bool, builder *strings.Builder) string {
+	bNeedReturnString := (builder == nil)
+	if bNeedReturnString {
+		builder = &strings.Builder{}
 	}
 
-	dd := t.Day()
-	ddStr := strconv.Itoa(dd)
-	if dd < 10 {
-		ddStr = "0" + ddStr
+	absNum := uint64(num)
+	if num < 0 {
+		builder.WriteRune('-')
+		absNum = uint64(math.Abs(float64(num)))
 	}
 
-	return fmt.Sprintf(format, yyStr, mmStr, ddStr)
+	return FormatUint(absNum, maxLength, bFillZero, builder)
 }
 
-// Get the string of time.
-// @param t, the time object to format.
-// @param format, format of the string.
-// @return the format string of time.
-func GetTimeString(t time.Time, format string) string {
-	// t := time.Now()
-
-	h := t.Hour()
-	hStr := strconv.Itoa(h)
-	if h < 10 {
-		hStr = "0" + hStr
+// Format unsigned integer.
+// @param num, the number to format.
+// @param maxLength, the max length in decimal.
+// @param bFillZero, is fill zero to prefix.
+// @param builder, a string builder. if not nil, only build string, not return
+// @return string, the format string of time.
+func FormatUint(num uint64, maxLength uint32, bFillZero bool, builder *strings.Builder) string {
+	bNeedReturnString := (builder == nil)
+	if bNeedReturnString {
+		builder = &strings.Builder{}
 	}
 
-	m := t.Minute()
-	mStr := strconv.Itoa(m)
-	if m < 10 {
-		mStr = "0" + mStr
+	bStart := false
+	for i := int(maxLength) - 1; i >= 0; i-- {
+		divisor := PowerOfTen(uint32(i))
+		quotient := num / divisor
+		if quotient > 0 || bStart || bFillZero {
+			builder.WriteRune(rune(0x30 + quotient))
+		}
+
+		if !bStart {
+			bStart = (quotient > 0)
+		}
+
+		num = num % divisor
 	}
 
-	s := t.Second()
-	sStr := strconv.Itoa(s)
-	if s < 10 {
-		sStr = "0" + sStr
+	if bNeedReturnString {
+		return builder.String()
 	}
 
-	return fmt.Sprintf(format, hStr, mStr, sStr)
+	return ""
+}
+
+// Get the power of ten.
+// @param power, the power.
+// @return uint64, the result
+func PowerOfTen(power uint32) uint64 {
+	result := uint64(1)
+	for i := 0; i < int(power); i++ {
+		result *= 10
+	}
+
+	return result
 }
 
 // Protect run, if panic, it will recover.
