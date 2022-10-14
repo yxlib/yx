@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"os/exec"
 	"reflect"
 	"runtime"
 	"strings"
@@ -363,4 +364,31 @@ func GetFilePackageClassName(classReflectName string) string {
 	}
 
 	return classReflectName[idx+1:]
+}
+
+func Daemon(program string, args []string, restartDelay uint16, shutdownFile string) error {
+	for {
+		cmd := exec.Command(program, args...)
+		err := cmd.Start()
+		if err != nil {
+			return err
+		}
+
+		err = cmd.Wait()
+		if err != nil {
+			return err
+		}
+
+		ok, _ := IsFileExist(shutdownFile)
+		if ok {
+			break
+		}
+
+		if restartDelay > 0 {
+			t := time.After(time.Duration(restartDelay) * time.Second)
+			<-t
+		}
+	}
+
+	return nil
 }
