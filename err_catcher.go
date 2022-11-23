@@ -40,6 +40,24 @@ func (c *ErrCatcher) Throw(methodName string, err error) error {
 	return err
 }
 
+func (c *ErrCatcher) TryCodeFunc(methodName string, f func() (int32, error)) (int32, error) {
+	code, err := f()
+	if err != nil {
+		c.Throw(methodName, err)
+	}
+
+	return code, err
+}
+
+func (c *ErrCatcher) TryFunc(methodName string, f func() error) error {
+	err := f()
+	if err != nil {
+		c.Throw(methodName, err)
+	}
+
+	return err
+}
+
 // Throw error with defer.
 // @param methodName, the name of method which throw the error.
 // @param errRef, reference of an error.
