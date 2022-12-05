@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"math"
+	"math/rand"
 	"os"
 	"os/exec"
 	"reflect"
@@ -391,4 +392,31 @@ func Daemon(program string, args []string, restartDelay uint16, shutdownFile str
 	}
 
 	return nil
+}
+
+//////////////////////////////////
+var factor1 = 1
+var factor2 = 1
+
+// return a non-negative pseudo-random number in [min,max)
+// from the default Source.
+// It panics if max <= min.
+func Random(min int, max int) int {
+	return min + RandomIntn(max-min)
+}
+
+// return a non-negative pseudo-random number in [0,n)
+// from the default Source.
+// It panics if n <= 0.
+func RandomIntn(n int) int {
+	factor2 = factor1 + factor2
+	factor1, factor2 = factor2, factor1
+
+	if factor1 > 1000 {
+		factor1 = 2
+		factor2 = 1
+	}
+
+	rand.Seed(time.Now().Unix() * int64(factor1))
+	return rand.Intn(n)
 }
