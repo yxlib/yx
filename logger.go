@@ -72,28 +72,83 @@ func SetLogLevel(lv LogLv) {
 }
 
 // Set to PowerShell mode.
-func SetPowerShellMode() {
-	loggerInst.SetPowerShellMode()
+// func SetPowerShellMode() {
+// 	loggerInst.SetPowerShellMode()
+// }
+
+// Set a new print func to instead of the default one.
+// eg: PowerShell print.
+//
+// var (
+// 	kernel32                *syscall.LazyDLL  = syscall.NewLazyDLL(`kernel32.dll`)
+// 	SetConsoleTextAttribute *syscall.LazyProc = nil
+// 	CloseHandle             *syscall.LazyProc = nil
+// 	BgColor   int   = 0x50
+// 	FontColor Color = Color{0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf}
+// )
+//
+// type Color struct {
+// 	black        int
+// 	blue         int
+// 	green        int
+// 	cyan         int
+// 	red          int
+// 	purple       int
+// 	yellow       int
+// 	light_gray   int
+// 	gray         int
+// 	light_blue   int
+// 	light_green  int
+// 	light_cyan   int
+// 	light_red    int
+// 	light_purple int
+// 	light_yellow int
+// 	white        int
+// }
+//
+// func PowerShellPrint(lv yx.LogLv, logStr string) {
+// 	if SetConsoleTextAttribute == nil {
+// 		SetConsoleTextAttribute = kernel32.NewProc(`SetConsoleTextAttribute`)
+// 	}
+//
+// 	if CloseHandle == nil {
+// 		CloseHandle = kernel32.NewProc(`CloseHandle`)
+// 	}
+//
+// 	color := FontColor.white
+// 	if lv == yx.LOG_LV_ERROR {
+// 		color = FontColor.light_red
+// 	} else if lv == yx.LOG_LV_WARN {
+// 		color = FontColor.light_yellow
+// 	}
+//
+// 	handle, _, _ := SetConsoleTextAttribute.Call(uintptr(syscall.Stdout), uintptr(BgColor|color))
+// 	fmt.Print(logStr)
+// 	CloseHandle.Call(handle)
+// }
+func SetPrintFunc(printFunc func(lv LogLv, logStr string)) {
+	loggerInst.SetPrintFunc(printFunc)
 }
 
 //========================
 //    log config
 //========================
 type LogConf struct {
-	Level           int    `json:"level"`
-	IsPowerShellRun bool   `json:"power_shell_run"`
-	IsDump          bool   `json:"is_dump"`
-	DumpPath        string `json:"dump_path"`
-	DumpFileSize    int    `json:"dump_file_size"`
-	DumpThreshold   int    `json:"dump_threshold"`
-	DumpInterval    uint32 `json:"dump_interval"`
+	Level int `json:"level"`
+	// IsPowerShellRun bool   `json:"power_shell_run"`
+	IsDump        bool   `json:"is_dump"`
+	DumpPath      string `json:"dump_path"`
+	DumpFileSize  int    `json:"dump_file_size"`
+	DumpThreshold int    `json:"dump_threshold"`
+	DumpInterval  uint32 `json:"dump_interval"`
 }
 
-func ConfigLogger(cfg *LogConf) {
+func ConfigLogger(cfg *LogConf, printFunc func(lv LogLv, logStr string)) {
 	SetLogLevel(cfg.Level)
-	if cfg.IsPowerShellRun {
-		SetPowerShellMode()
-	}
+	SetPrintFunc(printFunc)
+	// if cfg.IsPowerShellRun {
+	// 	SetPowerShellMode()
+	// }
 
 	if cfg.IsDump {
 		StartDumpLog(cfg.DumpPath, cfg.DumpFileSize, cfg.DumpThreshold, cfg.DumpInterval)
@@ -144,39 +199,6 @@ func (l *Logger) Detail(lv LogLv, s string) {
 // }
 
 //==============================================
-//           windows color
-//==============================================
-// var (
-// 	kernel32                *syscall.LazyDLL  = syscall.NewLazyDLL(`kernel32.dll`)
-// 	SetConsoleTextAttribute *syscall.LazyProc = nil
-// 	CloseHandle             *syscall.LazyProc = nil
-// 	// proc        *syscall.LazyProc = kernel32.NewProc(`SetConsoleTextAttribute`)
-// 	// CloseHandle *syscall.LazyProc = kernel32.NewProc(`CloseHandle`)
-
-//  BgColor   int   = 0x50
-// 	FontColor Color = Color{0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf}
-// )
-
-// type Color struct {
-// 	black        int
-// 	blue         int
-// 	green        int
-// 	cyan         int
-// 	red          int
-// 	purple       int
-// 	yellow       int
-// 	light_gray   int
-// 	gray         int
-// 	light_blue   int
-// 	light_green  int
-// 	light_cyan   int
-// 	light_red    int
-// 	light_purple int
-// 	light_yellow int
-// 	white        int
-// }
-
-//==============================================
 //                   logger
 //==============================================
 type LogInfo struct {
@@ -187,6 +209,7 @@ type LogInfo struct {
 type logger struct {
 	level           LogLv
 	bPowerShellMode bool
+	printFunc       func(lv LogLv, logStr string)
 	bDumpOpen       bool
 	strDumpFile     string
 	dumpFileSno     uint64
@@ -205,6 +228,7 @@ type logger struct {
 var loggerInst = &logger{
 	level:           LOG_LV_DEBUG,
 	bPowerShellMode: false,
+	printFunc:       nil,
 	bDumpOpen:       false,
 	strDumpFile:     "",
 	dumpFileSno:     0,
@@ -226,6 +250,10 @@ func (l *logger) SetLevel(lv LogLv) {
 
 func (l *logger) SetPowerShellMode() {
 	l.bPowerShellMode = true
+}
+
+func (l *logger) SetPrintFunc(printFunc func(lv LogLv, logStr string)) {
+	l.printFunc = printFunc
 }
 
 func (l *logger) D(tag string, a ...interface{}) {
@@ -386,40 +414,15 @@ func (l *logger) printConsoleLogs() {
 	}
 
 	for _, info := range l.writeLogs {
-		// if l.isPowerShellMode() {
-		// 	l.winPrint(info.Lv, info.LogStr)
-		// } else {
-		l.linuxPrint(info.Lv, info.LogStr)
-		// }
+		if l.printFunc != nil {
+			l.printFunc(info.Lv, info.LogStr)
+		} else {
+			l.linuxPrint(info.Lv, info.LogStr)
+		}
 	}
 
 	l.writeLogs = l.writeLogs[0:0]
 }
-
-// func (l *logger) isPowerShellMode() bool {
-// 	return l.bPowerShellMode && (kernel32 != nil)
-// }
-
-// func (l *logger) winPrint(lv LogLv, logStr string) {
-// 	if SetConsoleTextAttribute == nil {
-// 		SetConsoleTextAttribute = kernel32.NewProc(`SetConsoleTextAttribute`)
-// 	}
-
-// 	if CloseHandle == nil {
-// 		CloseHandle = kernel32.NewProc(`CloseHandle`)
-// 	}
-
-// 	color := FontColor.white
-// 	if lv == LOG_LV_ERROR {
-// 		color = FontColor.light_red
-// 	} else if lv == LOG_LV_WARN {
-// 		color = FontColor.light_yellow
-// 	}
-
-// 	handle, _, _ := SetConsoleTextAttribute.Call(uintptr(syscall.Stdout), uintptr(BgColor|color))
-// 	fmt.Print(logStr)
-// 	CloseHandle.Call(handle)
-// }
 
 func (l *logger) linuxPrint(lv LogLv, logStr string) {
 	logPrintStr := ""
@@ -597,9 +600,5 @@ func (l *logger) renameDumpFile() error {
 	builder.WriteString(ext)
 	newName := path.Join(dir, builder.String())
 
-	// timeStr := GetFullTimeString(now, "_%s%s%s_%s%s%s")
-	// timeStr, _ := FormatTimeStr("_YYMMDD_hhmmss", now, nil)
-	// snoStr := "_" + strconv.FormatUint(l.dumpFileSno, 10)
-	// newName := path.Join(dir, nameOnly+timeStr+snoStr+ext)
 	return os.Rename(l.strDumpFile, newName)
 }
