@@ -189,8 +189,8 @@ func (l *Logger) E(a ...interface{}) {
 }
 
 // Print detail log.
-func (l *Logger) Detail(lv LogLv, a ...interface{}) {
-	loggerInst.Detail(lv, a...)
+func (l *Logger) Detail(lv LogLv, logs []string) {
+	loggerInst.Detail(lv, logs)
 }
 
 // // Print ln.
@@ -285,13 +285,14 @@ func (l *logger) E(tag string, a ...interface{}) {
 	l.doLog(LOG_LV_ERROR, "ERROR", tag, a...)
 }
 
-func (l *logger) Detail(lv LogLv, a ...interface{}) {
+func (l *logger) Detail(lv LogLv, logs []string) {
 	if l.level > lv {
 		return
 	}
 
-	s := fmt.Sprint(a...)
-	l.printLog(lv, s+"\n")
+	l.pushLogs(lv, logs)
+	// s := fmt.Sprint(a...)
+	// l.printLog(lv, s+"\n")
 }
 
 func (l *logger) Ln() {
@@ -360,6 +361,19 @@ func (l *logger) pushLog(lv LogLv, log string) {
 		LogStr: log,
 	}
 	l.queLogs = append(l.queLogs, info)
+}
+
+func (l *logger) pushLogs(lv LogLv, logs []string) {
+	l.lck.Lock()
+	defer l.lck.Unlock()
+
+	for _, log := range logs {
+		info := &LogInfo{
+			Lv:     lv,
+			LogStr: log,
+		}
+		l.queLogs = append(l.queLogs, info)
+	}
 }
 
 func (l *logger) popLogs() {

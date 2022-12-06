@@ -4,7 +4,10 @@
 
 package yx
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 type ErrCatcher struct {
 	className string
@@ -108,42 +111,58 @@ func (c *errCatcher) CatchError(className string, methodName string, err error) 
 		return
 	}
 
-	blanks := " "
+	loggerInst.E("ErrCatcher", "Catch Error !!!")
+
+	logs := make([]string, 0)
+	logs = c.beginPrintError(err, logs)
+
 	stack, ok := c.popError(err)
-	if !ok {
-		c.beginPrintError(err)
-		loggerInst.Detail(LOG_LV_ERROR, "[S]", blanks, className, ".", methodName, "()")
-		c.endPrintError()
-		return
+	if ok {
+		logs = c.printInvokeStack(className, methodName, stack, logs)
+	} else {
+		log := fmt.Sprint("[S] ", className, ".", methodName, "()\n")
+		logs = append(logs, log)
 	}
 
+	logs = c.endPrintError(logs)
+	loggerInst.Detail(LOG_LV_ERROR, logs)
+}
+
+func (c *errCatcher) printInvokeStack(className string, methodName string, stack []*InvokeInfo, logs []string) []string {
+	log := ""
+	blanks := " "
 	mark := "|__ "
 	for i, info := range stack {
 		if i == 0 {
-			c.beginPrintError(err)
-			loggerInst.Detail(LOG_LV_ERROR, "[S]", blanks, info.className, ".", info.methodName, "()")
+			log = fmt.Sprint("[S]", blanks, info.className, ".", info.methodName, "()\n")
 		} else {
-			loggerInst.Detail(LOG_LV_ERROR, "[S]", blanks, mark, info.className, ".", info.methodName, "()")
+			log = fmt.Sprint("[S]", blanks, mark, info.className, ".", info.methodName, "()\n")
 		}
 
+		logs = append(logs, log)
 		blanks += "  "
 	}
 
-	loggerInst.Detail(LOG_LV_ERROR, "[S]", blanks, mark, className, ".", methodName, "()")
-	c.endPrintError()
+	log = fmt.Sprint("[S]", blanks, mark, className, ".", methodName, "()\n")
+	logs = append(logs, log)
+	return logs
 }
 
-func (c *errCatcher) beginPrintError(err error) {
-	loggerInst.E("ErrCatcher", "Catch Error !!!")
-	loggerInst.Detail(LOG_LV_ERROR, "[E] ====================================================")
-	loggerInst.Detail(LOG_LV_ERROR, "[M] ** ERROR: ", err.Error(), " **")
-	loggerInst.Ln()
+func (c *errCatcher) beginPrintError(err error, logs []string) []string {
+	logs = append(logs, "[E] ====================================================\n")
+
+	log := fmt.Sprint("[M] ** ERROR: ", err.Error(), " **", "\n")
+	logs = append(logs, log)
+
+	logs = append(logs, "\n")
+	return logs
 }
 
-func (c *errCatcher) endPrintError() {
-	loggerInst.Detail(LOG_LV_ERROR, "[S]")
-	loggerInst.Detail(LOG_LV_ERROR, "[E] ====================================================")
-	loggerInst.Ln()
+func (c *errCatcher) endPrintError(logs []string) []string {
+	logs = append(logs, "[S]\n")
+	logs = append(logs, "[E] ====================================================\n")
+	logs = append(logs, "\n")
+	return logs
 }
 
 func (c *errCatcher) pushError(className string, methodName string, err error) {
