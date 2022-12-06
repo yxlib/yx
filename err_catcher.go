@@ -112,7 +112,7 @@ func (c *errCatcher) CatchError(className string, methodName string, err error) 
 	stack, ok := c.popError(err)
 	if !ok {
 		c.beginPrintError(err)
-		loggerInst.Detail(LOG_LV_ERROR, "[S]"+blanks+className+"."+methodName+"()")
+		loggerInst.Detail(LOG_LV_ERROR, "[S]", blanks, className, ".", methodName, "()")
 		c.endPrintError()
 		return
 	}
@@ -121,22 +121,22 @@ func (c *errCatcher) CatchError(className string, methodName string, err error) 
 	for i, info := range stack {
 		if i == 0 {
 			c.beginPrintError(err)
-			loggerInst.Detail(LOG_LV_ERROR, "[S]"+blanks+info.className+"."+info.methodName+"()")
+			loggerInst.Detail(LOG_LV_ERROR, "[S]", blanks, info.className, ".", info.methodName, "()")
 		} else {
-			loggerInst.Detail(LOG_LV_ERROR, "[S]"+blanks+mark+info.className+"."+info.methodName+"()")
+			loggerInst.Detail(LOG_LV_ERROR, "[S]", blanks, mark, info.className, ".", info.methodName, "()")
 		}
 
 		blanks += "  "
 	}
 
-	loggerInst.Detail(LOG_LV_ERROR, "[S]"+blanks+mark+className+"."+methodName+"()")
+	loggerInst.Detail(LOG_LV_ERROR, "[S]", blanks, mark, className, ".", methodName, "()")
 	c.endPrintError()
 }
 
 func (c *errCatcher) beginPrintError(err error) {
 	loggerInst.E("ErrCatcher", "Catch Error !!!")
 	loggerInst.Detail(LOG_LV_ERROR, "[E] ====================================================")
-	loggerInst.Detail(LOG_LV_ERROR, "[M] ** ERROR: "+err.Error()+" **")
+	loggerInst.Detail(LOG_LV_ERROR, "[M] ** ERROR: ", err.Error(), " **")
 	loggerInst.Ln()
 }
 

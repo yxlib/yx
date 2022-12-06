@@ -189,8 +189,8 @@ func (l *Logger) E(a ...interface{}) {
 }
 
 // Print detail log.
-func (l *Logger) Detail(lv LogLv, s string) {
-	loggerInst.Detail(lv, s)
+func (l *Logger) Detail(lv LogLv, a ...interface{}) {
+	loggerInst.Detail(lv, a...)
 }
 
 // // Print ln.
@@ -285,7 +285,12 @@ func (l *logger) E(tag string, a ...interface{}) {
 	l.doLog(LOG_LV_ERROR, "ERROR", tag, a...)
 }
 
-func (l *logger) Detail(lv LogLv, s string) {
+func (l *logger) Detail(lv LogLv, a ...interface{}) {
+	if l.level > lv {
+		return
+	}
+
+	s := fmt.Sprint(a...)
 	l.printLog(lv, s+"\n")
 }
 
@@ -430,6 +435,8 @@ func (l *logger) linuxPrint(lv LogLv, logStr string) {
 		logPrintStr = fmt.Sprintf("%c[1;40;31m%s%c[0m", 0x1B, logStr, 0x1B)
 	} else if lv == LOG_LV_WARN {
 		logPrintStr = fmt.Sprintf("%c[1;40;33m%s%c[0m", 0x1B, logStr, 0x1B)
+	} else if lv == LOG_LV_DEBUG {
+		logPrintStr = fmt.Sprintf("%c[1;40;32m%s%c[0m", 0x1B, logStr, 0x1B)
 	} else {
 		logPrintStr = logStr
 	}
