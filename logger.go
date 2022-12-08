@@ -21,6 +21,8 @@ const (
 	LOG_DEFAULT_DUMP_SIZE      = 32 * 1024 * 1024
 	LOG_DEFAULT_DUMP_THRESHOLD = 32 * 1024
 	LOG_DEFAULT_DUMP_INTV      = 100
+
+	LOG_STR_BUILD_INIT_CAP = 128
 )
 
 const LOG_DEBUG_SWITCH_FILE = "debug.sf"
@@ -317,6 +319,7 @@ func (l *logger) doLog(lv LogLv, lvStr string, tag string, a ...interface{}) {
 
 func (l *logger) buildLogStr(t time.Time, lvStr string, tag string, msg string) string {
 	builder := &strings.Builder{}
+	builder.Grow(LOG_STR_BUILD_INIT_CAP)
 
 	// time
 	builder.WriteRune('[')
