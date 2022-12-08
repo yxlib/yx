@@ -207,15 +207,15 @@ type LogInfo struct {
 }
 
 type logger struct {
-	level           LogLv
-	bPowerShellMode bool
-	printFunc       func(lv LogLv, logStr string)
-	bDumpOpen       bool
-	strDumpFile     string
-	dumpFileSno     uint64
-	dumpFileSize    int
-	dumpThreshold   int
-	dumpIntervalMs  uint32
+	level          LogLv
+	bDebugSwitchOn bool
+	printFunc      func(lv LogLv, logStr string)
+	bDumpOpen      bool
+	strDumpFile    string
+	dumpFileSno    uint64
+	dumpFileSize   int
+	dumpThreshold  int
+	dumpIntervalMs uint32
 	// queLogs         chan string
 	lck           *sync.Mutex
 	queLogs       []*LogInfo
@@ -226,15 +226,15 @@ type logger struct {
 }
 
 var loggerInst = &logger{
-	level:           LOG_LV_DEBUG,
-	bPowerShellMode: false,
-	printFunc:       nil,
-	bDumpOpen:       false,
-	strDumpFile:     "",
-	dumpFileSno:     0,
-	dumpFileSize:    LOG_DEFAULT_DUMP_SIZE,
-	dumpThreshold:   LOG_DEFAULT_DUMP_THRESHOLD,
-	dumpIntervalMs:  LOG_DEFAULT_DUMP_INTV,
+	level:          LOG_LV_DEBUG,
+	bDebugSwitchOn: false,
+	printFunc:      nil,
+	bDumpOpen:      false,
+	strDumpFile:    "",
+	dumpFileSno:    0,
+	dumpFileSize:   LOG_DEFAULT_DUMP_SIZE,
+	dumpThreshold:  LOG_DEFAULT_DUMP_THRESHOLD,
+	dumpIntervalMs: LOG_DEFAULT_DUMP_INTV,
 	// queLogs:         make(chan string, MAX_LOG_CACHE_SIZE),
 	lck:           &sync.Mutex{},
 	queLogs:       nil,
@@ -248,17 +248,17 @@ func (l *logger) SetLevel(lv LogLv) {
 	l.level = lv
 }
 
-func (l *logger) SetPowerShellMode() {
-	l.bPowerShellMode = true
-}
+// func (l *logger) SetPowerShellMode() {
+// 	l.bPowerShellMode = true
+// }
 
 func (l *logger) SetPrintFunc(printFunc func(lv LogLv, logStr string)) {
 	l.printFunc = printFunc
 }
 
 func (l *logger) D(tag string, a ...interface{}) {
-	bExist, _ := IsFileExist(LOG_DEBUG_SWITCH_FILE)
-	if !bExist && l.level > LOG_LV_DEBUG {
+	// bExist, _ := IsFileExist(LOG_DEBUG_SWITCH_FILE)
+	if !l.bDebugSwitchOn && l.level > LOG_LV_DEBUG {
 		return
 	}
 
@@ -394,6 +394,7 @@ func (l *logger) loop() {
 			bEnd = l.isStop()
 			l.printConsoleLogs()
 		} else {
+			l.bDebugSwitchOn, _ = IsFileExist(LOG_DEBUG_SWITCH_FILE)
 			l.evtDumpToFile.WaitUntilTimeout(l.dumpIntervalMs)
 			bEnd = l.isStop() // judge end first, ensure dump all logs before stop dump
 			l.dump()
