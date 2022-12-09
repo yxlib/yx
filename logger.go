@@ -199,6 +199,10 @@ func (l *Logger) Detail(lv LogLv, logs [][]interface{}) {
 	loggerInst.Detail(lv, logs)
 }
 
+func (l *Logger) Ln() {
+	loggerInst.Ln()
+}
+
 // // Print ln.
 // func (l *Logger) Ln() {
 // 	loggerInst.Ln()
@@ -308,7 +312,7 @@ func (l *logger) Detail(lv LogLv, logs [][]interface{}) {
 		return
 	}
 
-	logs = append(logs, LogArgs(""))
+	// logs = append(logs, LogArgs(""))
 	l.printLogs(lv, "", logs, true)
 
 	// s := fmt.Sprint(a...)
