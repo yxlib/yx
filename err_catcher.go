@@ -5,7 +5,6 @@
 package yx
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -113,55 +112,49 @@ func (c *errCatcher) CatchError(className string, methodName string, err error) 
 
 	loggerInst.E("ErrCatcher", "Catch Error !!!")
 
-	logs := make([]string, 0)
+	logs := make([][]interface{}, 0)
 	logs = c.beginPrintError(err, logs)
 
 	stack, ok := c.popError(err)
 	if ok {
 		logs = c.printInvokeStack(className, methodName, stack, logs)
 	} else {
-		log := fmt.Sprint("[S] ", className, ".", methodName, "()")
-		logs = append(logs, log)
+		logs = append(logs, LogArgs("[S] ", className, ".", methodName, "()"))
 	}
 
 	logs = c.endPrintError(logs)
 	loggerInst.Detail(LOG_LV_ERROR, logs)
 }
 
-func (c *errCatcher) printInvokeStack(className string, methodName string, stack []*InvokeInfo, logs []string) []string {
-	log := ""
+func (c *errCatcher) printInvokeStack(className string, methodName string, stack []*InvokeInfo, logs [][]interface{}) [][]interface{} {
+	var log []interface{} = nil
 	blanks := " "
 	mark := "|__ "
 	for i, info := range stack {
 		if i == 0 {
-			log = fmt.Sprint("[S]", blanks, info.className, ".", info.methodName, "()")
+			log = LogArgs("[S]", blanks, info.className, ".", info.methodName, "()")
 		} else {
-			log = fmt.Sprint("[S]", blanks, mark, info.className, ".", info.methodName, "()")
+			log = LogArgs("[S]", blanks, mark, info.className, ".", info.methodName, "()")
 		}
 
 		logs = append(logs, log)
 		blanks += "  "
 	}
 
-	log = fmt.Sprint("[S]", blanks, mark, className, ".", methodName, "()")
-	logs = append(logs, log)
+	logs = append(logs, LogArgs("[S]", blanks, mark, className, ".", methodName, "()"))
 	return logs
 }
 
-func (c *errCatcher) beginPrintError(err error, logs []string) []string {
-	logs = append(logs, "[E] ====================================================")
-
-	log := fmt.Sprint("[M] ** ERROR: ", err.Error(), " **")
-	logs = append(logs, log)
-
-	logs = append(logs, "[E]")
+func (c *errCatcher) beginPrintError(err error, logs [][]interface{}) [][]interface{} {
+	logs = append(logs, LogArgs("[E] ===================================================="))
+	logs = append(logs, LogArgs("[M] ** ERROR: ", err.Error(), " **"))
+	logs = append(logs, LogArgs("[E]"))
 	return logs
 }
 
-func (c *errCatcher) endPrintError(logs []string) []string {
-	logs = append(logs, "[S]")
-	logs = append(logs, "[E] ====================================================")
-	logs = append(logs, "")
+func (c *errCatcher) endPrintError(logs [][]interface{}) [][]interface{} {
+	logs = append(logs, LogArgs("[S]"))
+	logs = append(logs, LogArgs("[E] ===================================================="))
 	return logs
 }
 

@@ -73,6 +73,10 @@ func SetLogLevel(lv LogLv) {
 	loggerInst.SetLevel(lv)
 }
 
+func LogArgs(a ...interface{}) []interface{} {
+	return a
+}
+
 // Set to PowerShell mode.
 // func SetPowerShellMode() {
 // 	loggerInst.SetPowerShellMode()
@@ -191,7 +195,7 @@ func (l *Logger) E(a ...interface{}) {
 }
 
 // Print detail log.
-func (l *Logger) Detail(lv LogLv, logs []string) {
+func (l *Logger) Detail(lv LogLv, logs [][]interface{}) {
 	loggerInst.Detail(lv, logs)
 }
 
@@ -206,7 +210,7 @@ func (l *Logger) Detail(lv LogLv, logs []string) {
 type LogInfo struct {
 	Lv       LogLv
 	Tag      string
-	Params   []interface{}
+	Args     []interface{}
 	IsDetail bool
 	// LogStr string
 }
@@ -299,12 +303,13 @@ func (l *logger) Ln() {
 	l.printLog(LOG_LV_INFO, "", nil, true)
 }
 
-func (l *logger) Detail(lv LogLv, logs []string) {
+func (l *logger) Detail(lv LogLv, logs [][]interface{}) {
 	if l.level > lv {
 		return
 	}
 
-	l.printDetailLogs(lv, logs)
+	logs = append(logs, LogArgs(""))
+	l.printLogs(lv, "", logs, true)
 
 	// s := fmt.Sprint(a...)
 	// l.printLog(lv, s+"\n")
@@ -326,48 +331,47 @@ func (l *logger) Detail(lv LogLv, logs []string) {
 // 	// l.printLog(lv, logStr)
 // }
 
-func (l *logger) printLog(lv LogLv, tag string, params []interface{}, bDetail bool) {
-	l.pushLog(lv, tag, params, bDetail)
+func (l *logger) printLog(lv LogLv, tag string, logArgs []interface{}, bDetail bool) {
+	l.pushLog(lv, tag, logArgs, bDetail)
 
 	if l.bDumpOpen && l.needDump() {
 		l.evtDumpToFile.Send()
 	}
 }
 
-func (l *logger) printDetailLogs(lv LogLv, logs []string) {
-	l.pushDetailLogs(lv, logs)
+func (l *logger) printLogs(lv LogLv, tag string, logs [][]interface{}, bDetail bool) {
+	l.pushLogs(lv, tag, logs, bDetail)
 
 	if l.bDumpOpen && l.needDump() {
 		l.evtDumpToFile.Send()
 	}
 }
 
-func (l *logger) pushLog(lv LogLv, tag string, params []interface{}, bDetail bool) {
+func (l *logger) pushLog(lv LogLv, tag string, logArgs []interface{}, bDetail bool) {
 	l.lck.Lock()
 	defer l.lck.Unlock()
 
-	info := &LogInfo{
-		Lv:       lv,
-		Tag:      tag,
-		Params:   params,
-		IsDetail: bDetail,
-	}
-	l.queLogs = append(l.queLogs, info)
+	l.pushOneLog(lv, tag, logArgs, bDetail)
 }
 
-func (l *logger) pushDetailLogs(lv LogLv, logs []string) {
+func (l *logger) pushLogs(lv LogLv, tag string, logs [][]interface{}, bDetail bool) {
 	l.lck.Lock()
 	defer l.lck.Unlock()
 
 	for _, log := range logs {
-		info := &LogInfo{
-			Lv:       lv,
-			Tag:      "",
-			Params:   []interface{}{log},
-			IsDetail: true,
-		}
-		l.queLogs = append(l.queLogs, info)
+		l.pushOneLog(lv, tag, log, bDetail)
 	}
+}
+
+func (l *logger) pushOneLog(lv LogLv, tag string, logArgs []interface{}, bDetail bool) {
+	info := &LogInfo{
+		Lv:       lv,
+		Tag:      tag,
+		Args:     logArgs,
+		IsDetail: bDetail,
+	}
+
+	l.queLogs = append(l.queLogs, info)
 }
 
 func (l *logger) popLogs() {
@@ -449,9 +453,9 @@ func (l *logger) buildLogStr(info *LogInfo) string {
 
 	// msg
 	msg := ""
-	paramLen := len(info.Params)
+	paramLen := len(info.Args)
 	if paramLen > 0 {
-		msg = fmt.Sprint(info.Params...)
+		msg = fmt.Sprint(info.Args...)
 	}
 
 	builder.WriteString(msg)
