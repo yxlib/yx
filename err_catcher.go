@@ -120,7 +120,7 @@ func (c *errCatcher) CatchError(className string, methodName string, err error) 
 	if ok {
 		logs = c.printInvokeStack(className, methodName, stack, logs)
 	} else {
-		log := fmt.Sprint("[S] ", className, ".", methodName, "()\n")
+		log := fmt.Sprint("[S] ", className, ".", methodName, "()")
 		logs = append(logs, log)
 	}
 
@@ -134,34 +134,34 @@ func (c *errCatcher) printInvokeStack(className string, methodName string, stack
 	mark := "|__ "
 	for i, info := range stack {
 		if i == 0 {
-			log = fmt.Sprint("[S]", blanks, info.className, ".", info.methodName, "()\n")
+			log = fmt.Sprint("[S]", blanks, info.className, ".", info.methodName, "()")
 		} else {
-			log = fmt.Sprint("[S]", blanks, mark, info.className, ".", info.methodName, "()\n")
+			log = fmt.Sprint("[S]", blanks, mark, info.className, ".", info.methodName, "()")
 		}
 
 		logs = append(logs, log)
 		blanks += "  "
 	}
 
-	log = fmt.Sprint("[S]", blanks, mark, className, ".", methodName, "()\n")
+	log = fmt.Sprint("[S]", blanks, mark, className, ".", methodName, "()")
 	logs = append(logs, log)
 	return logs
 }
 
 func (c *errCatcher) beginPrintError(err error, logs []string) []string {
-	logs = append(logs, "[E] ====================================================\n")
+	logs = append(logs, "[E] ====================================================")
 
-	log := fmt.Sprint("[M] ** ERROR: ", err.Error(), " **", "\n")
+	log := fmt.Sprint("[M] ** ERROR: ", err.Error(), " **")
 	logs = append(logs, log)
 
-	logs = append(logs, "\n")
+	logs = append(logs, "[E]")
 	return logs
 }
 
 func (c *errCatcher) endPrintError(logs []string) []string {
-	logs = append(logs, "[S]\n")
-	logs = append(logs, "[E] ====================================================\n")
-	logs = append(logs, "\n")
+	logs = append(logs, "[S]")
+	logs = append(logs, "[E] ====================================================")
+	logs = append(logs, "")
 	return logs
 }
 

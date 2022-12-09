@@ -204,8 +204,11 @@ func (l *Logger) Detail(lv LogLv, logs []string) {
 //                   logger
 //==============================================
 type LogInfo struct {
-	Lv     LogLv
-	LogStr string
+	Lv       LogLv
+	Tag      string
+	Params   []interface{}
+	IsDetail bool
+	// LogStr string
 }
 
 type logger struct {
@@ -264,7 +267,8 @@ func (l *logger) D(tag string, a ...interface{}) {
 		return
 	}
 
-	l.doLog(LOG_LV_DEBUG, "DEBUG", tag, a...)
+	// l.doLog(LOG_LV_DEBUG, "DEBUG", tag, a...)
+	l.printLog(LOG_LV_DEBUG, tag, a, false)
 }
 
 func (l *logger) I(tag string, a ...interface{}) {
@@ -272,7 +276,8 @@ func (l *logger) I(tag string, a ...interface{}) {
 		return
 	}
 
-	l.doLog(LOG_LV_INFO, "INFO ", tag, a...)
+	// l.doLog(LOG_LV_INFO, "INFO ", tag, a...)
+	l.printLog(LOG_LV_INFO, tag, a, false)
 }
 
 func (l *logger) W(tag string, a ...interface{}) {
@@ -280,11 +285,18 @@ func (l *logger) W(tag string, a ...interface{}) {
 		return
 	}
 
-	l.doLog(LOG_LV_WARN, "WARN ", tag, a...)
+	// l.doLog(LOG_LV_WARN, "WARN ", tag, a...)
+	l.printLog(LOG_LV_WARN, tag, a, false)
 }
 
 func (l *logger) E(tag string, a ...interface{}) {
-	l.doLog(LOG_LV_ERROR, "ERROR", tag, a...)
+	// l.doLog(LOG_LV_ERROR, "ERROR", tag, a...)
+	l.printLog(LOG_LV_ERROR, tag, a, false)
+}
+
+func (l *logger) Ln() {
+	// l.printLog(LOG_LV_INFO, "\n")
+	l.printLog(LOG_LV_INFO, "", nil, true)
 }
 
 func (l *logger) Detail(lv LogLv, logs []string) {
@@ -292,88 +304,67 @@ func (l *logger) Detail(lv LogLv, logs []string) {
 		return
 	}
 
-	l.pushLogs(lv, logs)
+	l.printDetailLogs(lv, logs)
+
 	// s := fmt.Sprint(a...)
 	// l.printLog(lv, s+"\n")
 }
 
-func (l *logger) Ln() {
-	l.printLog(LOG_LV_INFO, "\n")
-}
+// func (l *logger) doLog(lv LogLv, lvStr string, tag string, a ...interface{}) {
+// 	// now := time.Now()
+// 	// timeStr := GetFullTimeString(now, "[%s/%s/%s %s:%s:%s]")
+// 	// msg := fmt.Sprint(a...)
 
-func (l *logger) doLog(lv LogLv, lvStr string, tag string, a ...interface{}) {
-	now := time.Now()
-	// timeStr := GetFullTimeString(now, "[%s/%s/%s %s:%s:%s]")
-	msg := fmt.Sprint(a...)
+// 	// logStr := ""
+// 	// if !l.bDumpOpen {
+// 	// 	logStr = fmt.Sprint(timeStr, " ", lvStr, " ["+tag+"]  ", msg, "\n")
+// 	// } else {
+// 	// 	logStr = fmt.Sprintln(timeStr, lvStr, "["+tag+"] ", msg)
+// 	// }
 
-	// logStr := ""
-	// if !l.bDumpOpen {
-	// 	logStr = fmt.Sprint(timeStr, " ", lvStr, " ["+tag+"]  ", msg, "\n")
-	// } else {
-	// 	logStr = fmt.Sprintln(timeStr, lvStr, "["+tag+"] ", msg)
-	// }
+// 	// logStr := l.buildLogStr(now, lvStr, tag, msg)
+// 	// l.printLog(lv, logStr)
+// }
 
-	logStr := l.buildLogStr(now, lvStr, tag, msg)
-	l.printLog(lv, logStr)
-}
-
-func (l *logger) buildLogStr(t time.Time, lvStr string, tag string, msg string) string {
-	builder := &strings.Builder{}
-	builder.Grow(LOG_STR_BUILD_INIT_CAP)
-
-	// time
-	builder.WriteRune('[')
-	FormatTimeStr("YY/MM/DD hh:mm:ss", t, builder)
-	builder.WriteRune(']')
-	builder.WriteRune(' ')
-
-	// level
-	builder.WriteRune('[')
-	builder.WriteString(lvStr)
-	builder.WriteRune(']')
-	builder.WriteRune(' ')
-
-	// tag
-	builder.WriteRune('[')
-	builder.WriteString(tag)
-	builder.WriteRune(']')
-	builder.WriteRune(' ')
-	builder.WriteRune(' ')
-
-	// msg
-	builder.WriteString(msg)
-	builder.WriteRune('\n')
-
-	return builder.String()
-}
-
-func (l *logger) printLog(lv LogLv, logStr string) {
-	l.pushLog(lv, logStr)
+func (l *logger) printLog(lv LogLv, tag string, params []interface{}, bDetail bool) {
+	l.pushLog(lv, tag, params, bDetail)
 
 	if l.bDumpOpen && l.needDump() {
 		l.evtDumpToFile.Send()
 	}
 }
 
-func (l *logger) pushLog(lv LogLv, log string) {
+func (l *logger) printDetailLogs(lv LogLv, logs []string) {
+	l.pushDetailLogs(lv, logs)
+
+	if l.bDumpOpen && l.needDump() {
+		l.evtDumpToFile.Send()
+	}
+}
+
+func (l *logger) pushLog(lv LogLv, tag string, params []interface{}, bDetail bool) {
 	l.lck.Lock()
 	defer l.lck.Unlock()
 
 	info := &LogInfo{
-		Lv:     lv,
-		LogStr: log,
+		Lv:       lv,
+		Tag:      tag,
+		Params:   params,
+		IsDetail: bDetail,
 	}
 	l.queLogs = append(l.queLogs, info)
 }
 
-func (l *logger) pushLogs(lv LogLv, logs []string) {
+func (l *logger) pushDetailLogs(lv LogLv, logs []string) {
 	l.lck.Lock()
 	defer l.lck.Unlock()
 
 	for _, log := range logs {
 		info := &LogInfo{
-			Lv:     lv,
-			LogStr: log,
+			Lv:       lv,
+			Tag:      "",
+			Params:   []interface{}{log},
+			IsDetail: true,
 		}
 		l.queLogs = append(l.queLogs, info)
 	}
@@ -429,6 +420,60 @@ func (l *logger) isStop() bool {
 	return bEnd
 }
 
+func (l *logger) buildLogStr(info *LogInfo) string {
+	builder := &strings.Builder{}
+	builder.Grow(LOG_STR_BUILD_INIT_CAP)
+
+	if !info.IsDetail {
+		// time
+		t := time.Now()
+		builder.WriteRune('[')
+		FormatTimeStr("YY/MM/DD hh:mm:ss", t, builder)
+		builder.WriteRune(']')
+		builder.WriteRune(' ')
+
+		// level
+		lvStr := l.getLvStr(info.Lv)
+		builder.WriteRune('[')
+		builder.WriteString(lvStr)
+		builder.WriteRune(']')
+		builder.WriteRune(' ')
+
+		// tag
+		builder.WriteRune('[')
+		builder.WriteString(info.Tag)
+		builder.WriteRune(']')
+		builder.WriteRune(' ')
+		builder.WriteRune(' ')
+	}
+
+	// msg
+	msg := ""
+	paramLen := len(info.Params)
+	if paramLen > 0 {
+		msg = fmt.Sprint(info.Params...)
+	}
+
+	builder.WriteString(msg)
+	builder.WriteRune('\n')
+
+	return builder.String()
+}
+
+func (l *logger) getLvStr(lv LogLv) string {
+	if lv == LOG_LV_DEBUG {
+		return "DEBUG"
+	} else if lv == LOG_LV_INFO {
+		return "INFO "
+	} else if lv == LOG_LV_WARN {
+		return "WARN "
+	} else if lv == LOG_LV_ERROR {
+		return "ERROR"
+	} else {
+		return ""
+	}
+}
+
 func (l *logger) printConsoleLogs() {
 	l.popLogs()
 	if len(l.writeLogs) == 0 {
@@ -437,10 +482,11 @@ func (l *logger) printConsoleLogs() {
 	}
 
 	for _, info := range l.writeLogs {
+		logStr := l.buildLogStr(info)
 		if l.printFunc != nil {
-			l.printFunc(info.Lv, info.LogStr)
+			l.printFunc(info.Lv, logStr)
 		} else {
-			l.linuxPrint(info.Lv, info.LogStr)
+			l.linuxPrint(info.Lv, logStr)
 		}
 	}
 
@@ -599,7 +645,8 @@ func (l *logger) batchDumpToFile(logs []*LogInfo, f *os.File) (int, error) {
 
 	loopCnt := len(logs)
 	for i := 0; i < loopCnt; i++ {
-		_, err := w.WriteString(logs[i].LogStr)
+		logStr := l.buildLogStr(logs[i])
+		_, err := w.WriteString(logStr)
 		if err != nil {
 			fmt.Println("batchDumpToFile w.WriteString error: ", err)
 			return i, err
