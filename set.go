@@ -4,6 +4,15 @@
 
 package yx
 
+import "errors"
+
+var (
+	ErrSetKeyIsNil    = errors.New("key is nil")
+	ErrSetNotIntKey   = errors.New("not int key")
+	ErrSetNotUintKey  = errors.New("not uint key")
+	ErrSetNotFloatKey = errors.New("not float key")
+)
+
 type SetType = uint8
 
 const (
@@ -13,311 +22,306 @@ const (
 	SET_TYPE_OBJ
 )
 
-type Set struct {
-	t        SetType
-	intSet   map[int64]bool
-	uintSet  map[uint64]bool
-	floatSet map[float64]bool
-	objSet   map[interface{}]bool
+type Set interface {
+	Add(data interface{}) error
+	Remove(data interface{}) error
+	Exist(data interface{}) (bool, error)
+	GetElements() []interface{}
+	GetSize() int
+	Pop() (interface{}, bool)
 }
 
-func NewSet(t SetType) *Set {
-	s := &Set{
-		t: t,
-	}
-
+func NewSet(t SetType) Set {
 	if t == SET_TYPE_INT {
-		s.intSet = make(map[int64]bool)
+		return NewIntSet()
 	} else if t == SET_TYPE_UINT {
-		s.uintSet = make(map[uint64]bool)
+		return NewUintSet()
 	} else if t == SET_TYPE_FLOAT {
-		s.floatSet = make(map[float64]bool)
+		return NewFloatSet()
 	} else {
-		s.objSet = make(map[interface{}]bool)
-	}
-
-	return s
-}
-
-// Add item.
-// @param data, the item to add
-func (s *Set) Add(data interface{}) {
-	switch s.t {
-	case SET_TYPE_INT:
-		s.addIntVal(data)
-
-	case SET_TYPE_UINT:
-		s.addUintVal(data)
-
-	case SET_TYPE_FLOAT:
-		s.addFloatVal(data)
-
-	default:
-		s.addObjVal(data)
+		return NewObjectSet()
 	}
 }
 
-// Remove item.
-// @param data, the item to remove
-func (s *Set) Remove(data interface{}) {
-	switch s.t {
-	case SET_TYPE_INT:
-		s.removeIntVal(data)
+type IntSet struct {
+	mapKv map[int64]bool
+}
 
-	case SET_TYPE_UINT:
-		s.removeUintVal(data)
-
-	case SET_TYPE_FLOAT:
-		s.removeFloatVal(data)
-
-	default:
-		s.removeObjVal(data)
+func NewIntSet() *IntSet {
+	return &IntSet{
+		mapKv: make(map[int64]bool),
 	}
 }
 
-// Is the item exist.
-// @return bool, true exist, false not exist.
-func (s *Set) Exist(data interface{}) bool {
-	switch s.t {
-	case SET_TYPE_INT:
-		return s.existIntVal(data)
-
-	case SET_TYPE_UINT:
-		return s.existUintVal(data)
-
-	case SET_TYPE_FLOAT:
-		return s.existFloatVal(data)
-
-	default:
-		return s.existObjVal(data)
+func (s *IntSet) Add(data interface{}) error {
+	key, err := getIntKey(data)
+	if err != nil {
+		return err
 	}
-}
 
-// Get all items.
-// @return []interface{}, all item array.
-func (s *Set) GetElements() []interface{} {
-	switch s.t {
-	case SET_TYPE_INT:
-		return s.getIntElements()
-
-	case SET_TYPE_UINT:
-		return s.getUintElements()
-
-	case SET_TYPE_FLOAT:
-		return s.getFloatElements()
-
-	default:
-		return s.getObjElements()
-	}
-}
-
-// Get set size.
-// @return int, the set size.
-func (s *Set) GetSize() int {
-	switch s.t {
-	case SET_TYPE_INT:
-		return len(s.intSet)
-
-	case SET_TYPE_UINT:
-		return len(s.uintSet)
-
-	case SET_TYPE_FLOAT:
-		return len(s.floatSet)
-
-	default:
-		return len(s.objSet)
-	}
-}
-
-// Pop an items.
-// @return interface{}, a random item.
-// @return bool, true mean success, false mean failed.
-func (s *Set) Pop() (interface{}, bool) {
-	switch s.t {
-	case SET_TYPE_INT:
-		return s.popInt()
-
-	case SET_TYPE_UINT:
-		return s.popUint()
-
-	case SET_TYPE_FLOAT:
-		return s.popFloat()
-
-	default:
-		return s.popObj()
-	}
-}
-
-func (s *Set) addIntVal(data interface{}) {
-	key := s.getIntKey(data)
-	_, ok := s.intSet[key]
+	_, ok := s.mapKv[key]
 	if !ok {
-		s.intSet[key] = true
+		s.mapKv[key] = true
 	}
+
+	return nil
 }
 
-func (s *Set) removeIntVal(data interface{}) {
-	key := s.getIntKey(data)
-	_, ok := s.intSet[key]
+func (s *IntSet) Remove(data interface{}) error {
+	key, err := getIntKey(data)
+	if err != nil {
+		return err
+	}
+
+	_, ok := s.mapKv[key]
 	if ok {
-		delete(s.intSet, key)
+		delete(s.mapKv, key)
 	}
+
+	return nil
 }
 
-func (s *Set) existIntVal(data interface{}) bool {
-	key := s.getIntKey(data)
-	_, ok := s.intSet[key]
-	return ok
+func (s *IntSet) Exist(data interface{}) (bool, error) {
+	key, err := getIntKey(data)
+	if err != nil {
+		return false, err
+	}
+
+	_, ok := s.mapKv[key]
+	return ok, nil
 }
 
-func (s *Set) getIntElements() []interface{} {
-	objs := make([]interface{}, 0, len(s.intSet))
-	for k := range s.intSet {
+func (s *IntSet) GetElements() []interface{} {
+	objs := make([]interface{}, 0, len(s.mapKv))
+	for k := range s.mapKv {
 		objs = append(objs, k)
 	}
 
 	return objs
 }
 
-func (s *Set) popInt() (interface{}, bool) {
-	for k := range s.intSet {
-		delete(s.intSet, k)
+func (s *IntSet) GetSize() int {
+	return len(s.mapKv)
+}
+
+func (s *IntSet) Pop() (interface{}, bool) {
+	for k := range s.mapKv {
+		delete(s.mapKv, k)
 		return k, true
 	}
 
 	return nil, false
 }
 
-func (s *Set) addUintVal(data interface{}) {
-	key := s.getUintKey(data)
-	_, ok := s.uintSet[key]
+type UintSet struct {
+	mapKv map[uint64]bool
+}
+
+func NewUintSet() *UintSet {
+	return &UintSet{
+		mapKv: make(map[uint64]bool),
+	}
+}
+
+func (s *UintSet) Add(data interface{}) error {
+	key, err := getUintKey(data)
+	if err != nil {
+		return err
+	}
+
+	_, ok := s.mapKv[key]
 	if !ok {
-		s.uintSet[key] = true
+		s.mapKv[key] = true
 	}
+
+	return nil
 }
 
-func (s *Set) removeUintVal(data interface{}) {
-	key := s.getUintKey(data)
-	_, ok := s.uintSet[key]
+func (s *UintSet) Remove(data interface{}) error {
+	key, err := getUintKey(data)
+	if err != nil {
+		return err
+	}
+
+	_, ok := s.mapKv[key]
 	if ok {
-		delete(s.uintSet, key)
+		delete(s.mapKv, key)
 	}
+
+	return nil
 }
 
-func (s *Set) existUintVal(data interface{}) bool {
-	key := s.getUintKey(data)
-	_, ok := s.uintSet[key]
-	return ok
+func (s *UintSet) Exist(data interface{}) (bool, error) {
+	key, err := getUintKey(data)
+	if err != nil {
+		return false, err
+	}
+
+	_, ok := s.mapKv[key]
+	return ok, nil
 }
 
-func (s *Set) getUintElements() []interface{} {
-	objs := make([]interface{}, 0, len(s.uintSet))
-	for k := range s.uintSet {
+func (s *UintSet) GetElements() []interface{} {
+	objs := make([]interface{}, 0, len(s.mapKv))
+	for k := range s.mapKv {
 		objs = append(objs, k)
 	}
 
 	return objs
 }
 
-func (s *Set) popUint() (interface{}, bool) {
-	for k := range s.uintSet {
-		delete(s.uintSet, k)
+func (s *UintSet) GetSize() int {
+	return len(s.mapKv)
+}
+
+func (s *UintSet) Pop() (interface{}, bool) {
+	for k := range s.mapKv {
+		delete(s.mapKv, k)
 		return k, true
 	}
 
 	return nil, false
 }
 
-func (s *Set) addFloatVal(data interface{}) {
-	key := s.getFloatKey(data)
-	_, ok := s.floatSet[key]
+type FloatSet struct {
+	mapKv map[float64]bool
+}
+
+func NewFloatSet() *FloatSet {
+	return &FloatSet{
+		mapKv: make(map[float64]bool),
+	}
+}
+
+func (s *FloatSet) Add(data interface{}) error {
+	key, err := getFloatKey(data)
+	if err != nil {
+		return err
+	}
+
+	_, ok := s.mapKv[key]
 	if !ok {
-		s.floatSet[key] = true
+		s.mapKv[key] = true
 	}
+
+	return nil
 }
 
-func (s *Set) removeFloatVal(data interface{}) {
-	key := s.getFloatKey(data)
-	_, ok := s.floatSet[key]
+func (s *FloatSet) Remove(data interface{}) error {
+	key, err := getFloatKey(data)
+	if err != nil {
+		return err
+	}
+
+	_, ok := s.mapKv[key]
 	if ok {
-		delete(s.floatSet, key)
+		delete(s.mapKv, key)
 	}
+
+	return nil
 }
 
-func (s *Set) existFloatVal(data interface{}) bool {
-	key := s.getFloatKey(data)
-	_, ok := s.floatSet[key]
-	return ok
+func (s *FloatSet) Exist(data interface{}) (bool, error) {
+	key, err := getFloatKey(data)
+	if err != nil {
+		return false, err
+	}
+
+	_, ok := s.mapKv[key]
+	return ok, nil
 }
 
-func (s *Set) getFloatElements() []interface{} {
-	objs := make([]interface{}, 0, len(s.floatSet))
-	for k := range s.floatSet {
+func (s *FloatSet) GetElements() []interface{} {
+	objs := make([]interface{}, 0, len(s.mapKv))
+	for k := range s.mapKv {
 		objs = append(objs, k)
 	}
 
 	return objs
 }
 
-func (s *Set) popFloat() (interface{}, bool) {
-	for k := range s.floatSet {
-		delete(s.floatSet, k)
+func (s *FloatSet) GetSize() int {
+	return len(s.mapKv)
+}
+
+func (s *FloatSet) Pop() (interface{}, bool) {
+	for k := range s.mapKv {
+		delete(s.mapKv, k)
 		return k, true
 	}
 
 	return nil, false
 }
 
-func (s *Set) addObjVal(data interface{}) {
+type ObjectSet struct {
+	mapKv map[interface{}]bool
+}
+
+func NewObjectSet() *ObjectSet {
+	return &ObjectSet{
+		mapKv: make(map[interface{}]bool),
+	}
+}
+
+func (s *ObjectSet) Add(data interface{}) error {
 	if data == nil {
-		return
+		return ErrSetKeyIsNil
 	}
 
-	_, ok := s.objSet[data]
+	_, ok := s.mapKv[data]
 	if !ok {
-		s.objSet[data] = true
+		s.mapKv[data] = true
 	}
+
+	return nil
 }
 
-func (s *Set) removeObjVal(data interface{}) {
+func (s *ObjectSet) Remove(data interface{}) error {
 	if data == nil {
-		return
+		return ErrSetKeyIsNil
 	}
 
-	_, ok := s.objSet[data]
+	_, ok := s.mapKv[data]
 	if ok {
-		delete(s.objSet, data)
+		delete(s.mapKv, data)
 	}
+
+	return nil
 }
 
-func (s *Set) existObjVal(data interface{}) bool {
+func (s *ObjectSet) Exist(data interface{}) (bool, error) {
 	if data == nil {
-		return false
+		return false, ErrSetKeyIsNil
 	}
 
-	_, ok := s.objSet[data]
-	return ok
+	_, ok := s.mapKv[data]
+	return ok, nil
 }
 
-func (s *Set) getObjElements() []interface{} {
-	objs := make([]interface{}, 0, len(s.objSet))
-	for k := range s.objSet {
+func (s *ObjectSet) GetElements() []interface{} {
+	objs := make([]interface{}, 0, len(s.mapKv))
+	for k := range s.mapKv {
 		objs = append(objs, k)
 	}
 
 	return objs
 }
 
-func (s *Set) popObj() (interface{}, bool) {
-	for k := range s.objSet {
-		delete(s.objSet, k)
+func (s *ObjectSet) GetSize() int {
+	return len(s.mapKv)
+}
+
+func (s *ObjectSet) Pop() (interface{}, bool) {
+	for k := range s.mapKv {
+		delete(s.mapKv, k)
 		return k, true
 	}
 
 	return nil, false
 }
 
-func (s *Set) getIntKey(data interface{}) int64 {
+func getIntKey(data interface{}) (int64, error) {
+	var err error = nil
 	key := int64(0)
 
 	switch val := data.(type) {
@@ -346,12 +350,14 @@ func (s *Set) getIntKey(data interface{}) int64 {
 	case float64:
 		key = int64(val)
 	default:
+		err = ErrSetNotIntKey
 	}
 
-	return key
+	return key, err
 }
 
-func (s *Set) getUintKey(data interface{}) uint64 {
+func getUintKey(data interface{}) (uint64, error) {
+	var err error = nil
 	key := uint64(0)
 
 	switch val := data.(type) {
@@ -380,12 +386,14 @@ func (s *Set) getUintKey(data interface{}) uint64 {
 	case float64:
 		key = uint64(val)
 	default:
+		err = ErrSetNotUintKey
 	}
 
-	return key
+	return key, err
 }
 
-func (s *Set) getFloatKey(data interface{}) float64 {
+func getFloatKey(data interface{}) (float64, error) {
+	var err error = nil
 	key := float64(0)
 
 	switch val := data.(type) {
@@ -414,7 +422,8 @@ func (s *Set) getFloatKey(data interface{}) float64 {
 	case float64:
 		key = val
 	default:
+		err = ErrSetNotFloatKey
 	}
 
-	return key
+	return key, err
 }
