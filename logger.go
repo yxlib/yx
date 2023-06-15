@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"strings"
-	"sync"
 	"time"
 	// "syscall"
 )
@@ -230,7 +229,8 @@ type logger struct {
 	dumpThreshold  int
 	dumpIntervalMs uint32
 	// queLogs         chan string
-	lck           *sync.Mutex
+	// lck           *sync.Mutex
+	lck           *FastLock
 	queLogs       []*LogInfo
 	writeLogs     []*LogInfo
 	evtDumpToFile *Event
@@ -249,7 +249,8 @@ var loggerInst = &logger{
 	dumpThreshold:  LOG_DEFAULT_DUMP_THRESHOLD,
 	dumpIntervalMs: LOG_DEFAULT_DUMP_INTV,
 	// queLogs:         make(chan string, MAX_LOG_CACHE_SIZE),
-	lck:           &sync.Mutex{},
+	// lck:           &sync.Mutex{},
+	lck:           NewFastLock(),
 	queLogs:       nil,
 	writeLogs:     nil,
 	evtDumpToFile: NewEvent(),
@@ -339,7 +340,7 @@ func (l *logger) printLog(lv LogLv, tag string, logArgs []interface{}, bDetail b
 	l.pushLog(lv, tag, logArgs, bDetail)
 
 	if l.bDumpOpen && l.needDump() {
-		l.evtDumpToFile.Send()
+		l.evtDumpToFile.Broadcast()
 	}
 }
 
@@ -347,19 +348,27 @@ func (l *logger) printLogs(lv LogLv, tag string, logs [][]interface{}, bDetail b
 	l.pushLogs(lv, tag, logs, bDetail)
 
 	if l.bDumpOpen && l.needDump() {
-		l.evtDumpToFile.Send()
+		l.evtDumpToFile.Broadcast()
 	}
 }
 
 func (l *logger) pushLog(lv LogLv, tag string, logArgs []interface{}, bDetail bool) {
-	l.lck.Lock()
+	// l.lck.Lock()
+	if l.lck.TryLock(0) != nil {
+		return
+	}
+
 	defer l.lck.Unlock()
 
 	l.pushOneLog(lv, tag, logArgs, bDetail)
 }
 
 func (l *logger) pushLogs(lv LogLv, tag string, logs [][]interface{}, bDetail bool) {
-	l.lck.Lock()
+	// l.lck.Lock()
+	if l.lck.TryLock(0) != nil {
+		return
+	}
+
 	defer l.lck.Unlock()
 
 	for _, log := range logs {
@@ -379,7 +388,11 @@ func (l *logger) pushOneLog(lv LogLv, tag string, logArgs []interface{}, bDetail
 }
 
 func (l *logger) popLogs() {
-	l.lck.Lock()
+	// l.lck.Lock()
+	if l.lck.TryLock(0) != nil {
+		return
+	}
+
 	defer l.lck.Unlock()
 
 	l.queLogs, l.writeLogs = l.writeLogs, l.queLogs
@@ -403,29 +416,31 @@ func (l *logger) loop() {
 		}
 
 		if bEnd {
-			l.evtStopSucc.Send()
+			l.evtStopSucc.Close()
 			break
 		}
 	}
 }
 
 func (l *logger) stop() {
-	l.evtStop.Send()
-	l.evtDumpToFile.Send()
+	l.evtStop.Close()
+	l.evtDumpToFile.Close()
 	l.evtStopSucc.Wait()
 }
 
 func (l *logger) isStop() bool {
-	bEnd := false
+	return l.evtStop.IsClose()
 
-	select {
-	case <-l.evtStop.C:
-		bEnd = true
+	// bEnd := false
 
-	default:
-	}
+	// select {
+	// case <-l.evtStop.C:
+	// 	bEnd = true
 
-	return bEnd
+	// default:
+	// }
+
+	// return bEnd
 }
 
 func (l *logger) buildLogStr(info *LogInfo) string {
@@ -529,7 +544,7 @@ func (l *logger) startDump(file string, dumpFileSize int, dumpThreshold int, dum
 func (l *logger) stopDump() {
 	l.bDumpOpen = false
 	// l.evtStop.Send()
-	l.evtDumpToFile.Send()
+	l.evtDumpToFile.Broadcast()
 	// l.evtStopSucc.Wait()
 	// l.strDumpFile = ""
 }

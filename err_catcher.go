@@ -4,10 +4,6 @@
 
 package yx
 
-import (
-	"sync"
-)
-
 type ErrCatcher struct {
 	className string
 }
@@ -87,13 +83,15 @@ type InvokeStack = []*InvokeInfo
 
 type errCatcher struct {
 	mapErr2InvokeStack map[error]InvokeStack
-	lck                *sync.Mutex
+	lck                *FastLock
+	// lck                *sync.Mutex
 	// logger             *Logger
 }
 
 var errCatcherInst = &errCatcher{
 	mapErr2InvokeStack: make(map[error]InvokeStack),
-	lck:                &sync.Mutex{},
+	lck:                NewFastLock(),
+	// lck:                &sync.Mutex{},
 	// logger:             NewLogger("ErrCatcher"),
 }
 
@@ -159,7 +157,11 @@ func (c *errCatcher) endPrintError(logs [][]interface{}) [][]interface{} {
 }
 
 func (c *errCatcher) pushError(className string, methodName string, err error) {
-	c.lck.Lock()
+	// c.lck.Lock()
+	if c.lck.TryLock(0) != nil {
+		return
+	}
+
 	defer c.lck.Unlock()
 
 	stack, ok := c.mapErr2InvokeStack[err]
@@ -172,7 +174,11 @@ func (c *errCatcher) pushError(className string, methodName string, err error) {
 }
 
 func (c *errCatcher) popError(err error) (InvokeStack, bool) {
-	c.lck.Lock()
+	// c.lck.Lock()
+	if c.lck.TryLock(0) != nil {
+		return nil, false
+	}
+
 	defer c.lck.Unlock()
 
 	stack, ok := c.mapErr2InvokeStack[err]

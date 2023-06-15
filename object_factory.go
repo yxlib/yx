@@ -76,13 +76,15 @@ func (w *objectWorkshop) reuseObject(v interface{}) error {
 //=========================
 type ObjectFactory struct {
 	mapName2Workshop map[string]*objectWorkshop
-	lckWs            *sync.RWMutex
+	lckWs            *FastLock
+	// lckWs            *sync.RWMutex
 }
 
 func NewObjectFactory() *ObjectFactory {
 	return &ObjectFactory{
 		mapName2Workshop: make(map[string]*objectWorkshop),
-		lckWs:            &sync.RWMutex{},
+		lckWs:            NewFastLock(),
+		// lckWs:            &sync.RWMutex{},
 	}
 }
 
@@ -143,7 +145,11 @@ func (f *ObjectFactory) ReuseObject(v interface{}, name string) error {
 }
 
 func (f *ObjectFactory) createWorkshop(name string, t reflect.Type, newFunc func() interface{}, maxPoolCapacity uint64) {
-	f.lckWs.Lock()
+	// f.lckWs.Lock()
+	if f.lckWs.TryLock(0) != nil {
+		return
+	}
+
 	defer f.lckWs.Unlock()
 
 	_, ok := f.mapName2Workshop[name]
@@ -153,8 +159,13 @@ func (f *ObjectFactory) createWorkshop(name string, t reflect.Type, newFunc func
 }
 
 func (f *ObjectFactory) getWorkshop(name string) (*objectWorkshop, bool) {
-	f.lckWs.RLock()
-	defer f.lckWs.RUnlock()
+	// f.lckWs.RLock()
+	// defer f.lckWs.RUnlock()
+	if f.lckWs.TryLock(0) != nil {
+		return nil, false
+	}
+
+	defer f.lckWs.Unlock()
 
 	w, ok := f.mapName2Workshop[name]
 	return w, ok

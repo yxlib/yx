@@ -6,7 +6,6 @@ package yx
 
 import (
 	"errors"
-	"sync"
 )
 
 var (
@@ -14,18 +13,20 @@ var (
 )
 
 type IdGenerator struct {
-	lck      *sync.Mutex
+	// lck      *sync.Mutex
+	lck      *FastLock
 	curId    uint64
 	maxId    uint64
-	reuseIds *Set
+	reuseIds *UintSet
 }
 
 func NewIdGenerator(min uint64, max uint64) *IdGenerator {
 	return &IdGenerator{
-		lck:      &sync.Mutex{},
+		// lck:      &sync.Mutex{},
+		lck:      NewFastLock(),
 		curId:    min,
 		maxId:    max,
-		reuseIds: NewSet(SET_TYPE_UINT),
+		reuseIds: NewUintSet(),
 	}
 }
 
@@ -33,7 +34,11 @@ func NewIdGenerator(min uint64, max uint64) *IdGenerator {
 // @return uint64, the assign id.
 // @return error, ErrIdGenIdUseOut mean use out.
 func (g *IdGenerator) GetId() (uint64, error) {
-	g.lck.Lock()
+	// g.lck.Lock()
+	if err := g.lck.TryLock(0); err != nil {
+		return 0, err
+	}
+
 	defer g.lck.Unlock()
 
 	id, ok := g.assignId()
@@ -52,7 +57,10 @@ func (g *IdGenerator) GetId() (uint64, error) {
 // Reuse an id.
 // @param id, the reuse id.
 func (g *IdGenerator) ReuseId(id uint64) {
-	g.lck.Lock()
+	if g.lck.TryLock(0) != nil {
+		return
+	}
+
 	defer g.lck.Unlock()
 
 	g.pushReuseId(id)

@@ -4,7 +4,11 @@
 
 package yx
 
-import "sync"
+import "errors"
+
+var (
+	ErrObsMsgEmpty = errors.New("msgName is empty")
+)
 
 type NotifyMsg struct {
 	Name   string
@@ -36,15 +40,15 @@ type Dispatcher interface {
 //=====================================================
 type BaseDispatcher struct {
 	msgName     string
-	observers   *Set
-	lckObserver *sync.RWMutex
+	observers   *ObjectSet
+	lckObserver *FastLock
 }
 
 func NewBaseDispatcher(msgName string) *BaseDispatcher {
 	return &BaseDispatcher{
 		msgName:     msgName,
-		observers:   NewSet(SET_TYPE_OBJ),
-		lckObserver: &sync.RWMutex{},
+		observers:   NewObjectSet(),
+		lckObserver: NewFastLock(),
 	}
 }
 
@@ -57,7 +61,11 @@ func (d *BaseDispatcher) AddObserver(o Observer) {
 		return
 	}
 
-	d.lckObserver.Lock()
+	// d.lckObserver.Lock()
+	if d.lckObserver.TryLock(0) != nil {
+		return
+	}
+
 	defer d.lckObserver.Unlock()
 
 	d.observers.Add(o)
@@ -76,7 +84,11 @@ func (d *BaseDispatcher) RemoveObserver(o Observer) {
 		return
 	}
 
-	d.lckObserver.Lock()
+	// d.lckObserver.Lock()
+	if d.lckObserver.TryLock(0) != nil {
+		return
+	}
+
 	defer d.lckObserver.Unlock()
 
 	d.observers.Remove(o)
@@ -96,7 +108,8 @@ func (d *BaseDispatcher) notifyImpl(params ...interface{}) {
 	observers := d.cloneObservers()
 	for _, obj := range observers {
 		obs := obj.(Observer)
-		if d.isObserverRemove(obs) {
+		bRm, err := d.isObserverRemove(obs)
+		if err != nil || bRm {
 			continue
 		}
 
@@ -113,8 +126,12 @@ func (d *BaseDispatcher) notifyImpl(params ...interface{}) {
 }
 
 func (d *BaseDispatcher) cloneObservers() []interface{} {
-	d.lckObserver.RLock()
-	defer d.lckObserver.RUnlock()
+	// d.lckObserver.RLock()
+	if d.lckObserver.TryLock(0) != nil {
+		return []interface{}{}
+	}
+
+	defer d.lckObserver.Unlock()
 
 	return d.observers.GetElements()
 
@@ -123,11 +140,16 @@ func (d *BaseDispatcher) cloneObservers() []interface{} {
 	// return observers
 }
 
-func (d *BaseDispatcher) isObserverRemove(o Observer) bool {
-	d.lckObserver.RLock()
-	defer d.lckObserver.RUnlock()
+func (d *BaseDispatcher) isObserverRemove(o Observer) (bool, error) {
+	// d.lckObserver.RLock()
+	if err := d.lckObserver.TryLock(0); err != nil {
+		return false, err
+	}
 
-	return !d.observers.Exist(o)
+	defer d.lckObserver.Unlock()
+
+	bExist, err := d.observers.Exist(o)
+	return !bExist, err
 
 	// for _, obs := range d.observers {
 	// 	if o == obs {
@@ -187,22 +209,23 @@ func (d *AsyncDispatcher) Notify(params ...interface{}) {
 }
 
 func (d *AsyncDispatcher) Start() {
+	ch := d.evtStop.GetChan()
 	for {
 		select {
 		case msg := <-d.chanMsg:
 			d.notifyImpl(msg.Params...)
 
-		case <-d.evtStop.C:
+		case <-ch:
 			goto Exit0
 		}
 	}
 
 Exit0:
-	d.evtExit.Send()
+	d.evtExit.Close()
 }
 
 func (d *AsyncDispatcher) Stop() {
-	d.evtStop.Send()
+	d.evtStop.Close()
 	d.evtExit.Wait()
 }
 
@@ -211,13 +234,13 @@ func (d *AsyncDispatcher) Stop() {
 //=====================================================
 type NotifyCenter struct {
 	mapName2Dispatcher map[string]Dispatcher
-	lckDispatcher      *sync.RWMutex
+	lckDispatcher      *FastLock
 }
 
 func NewNotifyCenter() *NotifyCenter {
 	return &NotifyCenter{
 		mapName2Dispatcher: make(map[string]Dispatcher),
-		lckDispatcher:      &sync.RWMutex{},
+		lckDispatcher:      NewFastLock(),
 	}
 }
 
@@ -225,21 +248,26 @@ func NewNotifyCenter() *NotifyCenter {
 // @param msgName, the name of message which the observer will listen to.
 // @param o, the observer to be added.
 func (c *NotifyCenter) AddObserver(msgName string, o Observer) {
-	if len(msgName) == 0 {
-		return
-	}
+	// if len(msgName) == 0 {
+	// 	return
+	// }
 
 	if o == nil {
 		return
 	}
 
-	c.lckDispatcher.Lock()
-	defer c.lckDispatcher.Unlock()
+	// c.lckDispatcher.Lock()
+	// defer c.lckDispatcher.Unlock()
 
-	dispatcher, ok := c.mapName2Dispatcher[msgName]
-	if !ok {
-		dispatcher = NewBaseDispatcher(msgName)
-		c.mapName2Dispatcher[msgName] = dispatcher
+	// dispatcher, ok := c.mapName2Dispatcher[msgName]
+	// if !ok {
+	// 	dispatcher = NewBaseDispatcher(msgName)
+	// 	c.mapName2Dispatcher[msgName] = dispatcher
+	// }
+
+	dispatcher, err := c.confirmDispatcherExist(msgName)
+	if err != nil {
+		return
 	}
 
 	dispatcher.AddObserver(o)
@@ -249,18 +277,19 @@ func (c *NotifyCenter) AddObserver(msgName string, o Observer) {
 // @param msgName, the name of message which the observer listening to.
 // @param o, the observer to be removed.
 func (c *NotifyCenter) RemoveObserver(msgName string, o Observer) {
-	if len(msgName) == 0 {
-		return
-	}
+	// if len(msgName) == 0 {
+	// 	return
+	// }
 
 	if o == nil {
 		return
 	}
 
-	c.lckDispatcher.Lock()
-	defer c.lckDispatcher.Unlock()
+	// c.lckDispatcher.Lock()
+	// defer c.lckDispatcher.Unlock()
 
-	dispatcher, ok := c.mapName2Dispatcher[msgName]
+	// dispatcher, ok := c.mapName2Dispatcher[msgName]
+	dispatcher, ok := c.GetDispatcher(msgName)
 	if !ok {
 		return
 	}
@@ -272,14 +301,15 @@ func (c *NotifyCenter) RemoveObserver(msgName string, o Observer) {
 // @param msgName, the name of message.
 // @param params, the params of the message.
 func (c *NotifyCenter) Notify(msgName string, params ...interface{}) {
-	if len(msgName) == 0 {
-		return
-	}
+	// if len(msgName) == 0 {
+	// 	return
+	// }
 
-	c.lckDispatcher.Lock()
-	defer c.lckDispatcher.Unlock()
+	// c.lckDispatcher.Lock()
+	// defer c.lckDispatcher.Unlock()
 
-	dispatcher, ok := c.mapName2Dispatcher[msgName]
+	// dispatcher, ok := c.mapName2Dispatcher[msgName]
+	dispatcher, ok := c.GetDispatcher(msgName)
 	if !ok {
 		return
 	}
@@ -299,7 +329,11 @@ func (c *NotifyCenter) AddDispatcher(msgName string, dispatcher Dispatcher) {
 		return
 	}
 
-	c.lckDispatcher.Lock()
+	// c.lckDispatcher.Lock()
+	if c.lckDispatcher.TryLock(0) != nil {
+		return
+	}
+
 	defer c.lckDispatcher.Unlock()
 
 	c.mapName2Dispatcher[msgName] = dispatcher
@@ -312,10 +346,17 @@ func (c *NotifyCenter) RemoveDispatcher(msgName string) {
 		return
 	}
 
-	c.lckDispatcher.Lock()
+	// c.lckDispatcher.Lock()
+	if c.lckDispatcher.TryLock(0) != nil {
+		return
+	}
+
 	defer c.lckDispatcher.Unlock()
 
-	delete(c.mapName2Dispatcher, msgName)
+	_, ok := c.mapName2Dispatcher[msgName]
+	if ok {
+		delete(c.mapName2Dispatcher, msgName)
+	}
 }
 
 // Get an dispatcher from the notify center.
@@ -327,9 +368,33 @@ func (c *NotifyCenter) GetDispatcher(msgName string) (Dispatcher, bool) {
 		return nil, false
 	}
 
-	c.lckDispatcher.RLock()
-	defer c.lckDispatcher.RUnlock()
+	if c.lckDispatcher.TryLock(0) != nil {
+		return nil, false
+	}
+
+	defer c.lckDispatcher.Unlock()
 
 	d, ok := c.mapName2Dispatcher[msgName]
 	return d, ok
+}
+
+func (c *NotifyCenter) confirmDispatcherExist(msgName string) (Dispatcher, error) {
+	if len(msgName) == 0 {
+		return nil, ErrObsMsgEmpty
+	}
+
+	// c.lckDispatcher.Lock()
+	if err := c.lckDispatcher.TryLock(0); err != nil {
+		return nil, err
+	}
+
+	defer c.lckDispatcher.Unlock()
+
+	dispatcher, ok := c.mapName2Dispatcher[msgName]
+	if !ok {
+		dispatcher = NewBaseDispatcher(msgName)
+		c.mapName2Dispatcher[msgName] = dispatcher
+	}
+
+	return dispatcher, nil
 }

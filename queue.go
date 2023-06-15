@@ -6,7 +6,6 @@ package yx
 
 import (
 	"errors"
-	"sync"
 )
 
 var (
@@ -111,33 +110,45 @@ func (q *LinkedQueue) GetSize() uint64 {
 //    SyncLinkedQueue
 //========================
 type SyncLinkedQueue struct {
-	lck *sync.Mutex
+	lck *FastLock
 	que *LinkedQueue
 }
 
 func NewSyncLinkedQueue() *SyncLinkedQueue {
 	return &SyncLinkedQueue{
-		lck: &sync.Mutex{},
+		lck: NewFastLock(),
 		que: NewLinkedQueue(),
 	}
 }
 
 func (q *SyncLinkedQueue) Enqueue(item interface{}) error {
-	q.lck.Lock()
+	// q.lck.Lock()
+	if err := q.lck.TryLock(0); err != nil {
+		return err
+	}
+
 	defer q.lck.Unlock()
 
 	return q.que.Enqueue(item)
 }
 
 func (q *SyncLinkedQueue) Dequeue() (interface{}, error) {
-	q.lck.Lock()
+	// q.lck.Lock()
+	if err := q.lck.TryLock(0); err != nil {
+		return nil, err
+	}
+
 	defer q.lck.Unlock()
 
 	return q.que.Dequeue()
 }
 
 func (q *SyncLinkedQueue) GetSize() uint64 {
-	q.lck.Lock()
+	// q.lck.Lock()
+	if q.lck.TryLock(0) != nil {
+		return 0
+	}
+
 	defer q.lck.Unlock()
 
 	return q.que.GetSize()
@@ -159,7 +170,11 @@ func NewSyncLimitQueue(maxSize uint64) *SyncLimitQueue {
 }
 
 func (q *SyncLimitQueue) Enqueue(item interface{}) error {
-	q.lck.Lock()
+	// q.lck.Lock()
+	if err := q.lck.TryLock(0); err != nil {
+		return err
+	}
+
 	defer q.lck.Unlock()
 
 	if q.que.GetSize() == q.maxSize {
