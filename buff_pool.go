@@ -44,17 +44,39 @@ func (p *BuffPool) newBuff() interface{} {
 }
 
 type BuffFactory struct {
-	poolList []*BuffPool
+	poolList  []*BuffPool
+	minSize   uint32
+	maxSize   uint32
+	queueStep uint32
 }
 
-func NewBuffFactory() *BuffFactory {
-	listCnt := (BP_MAX_BUFF_SIZE-BP_MIN_BUFF_SIZE)/BP_QUEUE_STEP + 1
-	p := &BuffFactory{
-		poolList: make([]*BuffPool, listCnt),
+func NewBuffFactory(minSize uint32, maxSize uint32, queueStep uint32) *BuffFactory {
+	if minSize == 0 {
+		minSize = BP_MIN_BUFF_SIZE
 	}
 
-	for i := 0; i < listCnt; i++ {
-		size := uint32(BP_MIN_BUFF_SIZE + i*BP_QUEUE_STEP)
+	if maxSize == 0 {
+		maxSize = BP_MAX_BUFF_SIZE
+	}
+
+	if queueStep == 0 {
+		queueStep = BP_QUEUE_STEP
+	}
+
+	if minSize > maxSize {
+		minSize, maxSize = maxSize, minSize
+	}
+
+	listCnt := (maxSize-minSize)/queueStep + 1
+	p := &BuffFactory{
+		poolList:  make([]*BuffPool, listCnt),
+		minSize:   minSize,
+		maxSize:   maxSize,
+		queueStep: queueStep,
+	}
+
+	for i := uint32(0); i < listCnt; i++ {
+		size := minSize + i*queueStep
 		p.poolList[i] = NewBuffPool(size)
 	}
 
@@ -62,15 +84,15 @@ func NewBuffFactory() *BuffFactory {
 }
 
 func (p *BuffFactory) CreateBuff(size uint32) *[]byte {
-	if size > BP_MAX_BUFF_SIZE {
+	if size > uint32(p.maxSize) {
 		buff := make([]byte, size)
 		return &buff
 	}
 
-	idx := 0
-	if size > BP_MIN_BUFF_SIZE {
-		idx = (int(size) - BP_MIN_BUFF_SIZE) / BP_QUEUE_STEP
-		if (size-BP_MIN_BUFF_SIZE)%BP_QUEUE_STEP != 0 {
+	idx := uint32(0)
+	if size > p.minSize {
+		idx = (size - p.minSize) / p.queueStep
+		if (size-p.minSize)%p.queueStep != 0 {
 			idx++
 		}
 	}
@@ -80,15 +102,15 @@ func (p *BuffFactory) CreateBuff(size uint32) *[]byte {
 }
 
 func (p *BuffFactory) ReuseBuff(buffRef *[]byte) {
-	size := len(*buffRef)
-	if size < BP_MIN_BUFF_SIZE || size > BP_MAX_BUFF_SIZE {
+	size := uint32(len(*buffRef))
+	if size < p.minSize || size > p.maxSize {
 		return
 	}
 
-	if (size-BP_MIN_BUFF_SIZE)%BP_QUEUE_STEP != 0 {
+	if (size-p.minSize)%p.queueStep != 0 {
 		return
 	}
 
-	idx := (size - BP_MIN_BUFF_SIZE) / BP_QUEUE_STEP
+	idx := (size - p.minSize) / p.queueStep
 	p.poolList[idx].Put(buffRef)
 }
