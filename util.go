@@ -367,31 +367,41 @@ func GetFilePackageClassName(classReflectName string) string {
 	return classReflectName[idx+1:]
 }
 
-func Daemon(program string, args []string, restartDelay uint16, shutdownFile string) error {
+func Daemon(program string, args []string, restartDelay uint16, chanExit chan bool, onStartSucc func(cmd *exec.Cmd)) error {
 	for {
-		cmd := exec.Command(program, args...)
-		err := cmd.Start()
-		if err != nil {
-			return err
-		}
+		select {
+		case <-chanExit:
+			return nil
 
-		err = cmd.Wait()
-		if err != nil {
-			return err
-		}
+		default:
+			cmd := exec.Command(program, args...)
+			err := cmd.Start()
+			if err != nil {
+				return err
+			}
 
-		ok, _ := IsFileExist(shutdownFile)
-		if ok {
-			break
-		}
+			if onStartSucc != nil {
+				onStartSucc(cmd)
+			}
 
-		if restartDelay > 0 {
-			t := time.After(time.Duration(restartDelay) * time.Second)
-			<-t
+			err = cmd.Wait()
+			if err != nil {
+				return err
+			}
+
+			// ok, _ := IsFileExist(shutdownFile)
+			// if ok {
+			// 	break
+			// }
+
+			if restartDelay > 0 {
+				t := time.After(time.Duration(restartDelay) * time.Second)
+				<-t
+			}
 		}
 	}
 
-	return nil
+	// return nil
 }
 
 //////////////////////////////////
