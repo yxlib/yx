@@ -39,10 +39,15 @@ func (e *Event) Broadcast() error {
 	}
 
 	ch := e.chanBroadcast
-	e.chanBroadcast = make(chan byte, 1)
+	if ch != nil {
+		e.chanBroadcast = make(chan byte, 1)
+	}
+
 	e.lck.Unlock()
 
-	close(ch)
+	if ch != nil {
+		close(ch)
+	}
 	return nil
 
 	// select {

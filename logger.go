@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 	// "syscall"
@@ -70,6 +72,10 @@ func StopDumpLog() {
 // @param lv, the level to begin print.
 func SetLogLevel(lv LogLv) {
 	loggerInst.SetLevel(lv)
+}
+
+func SetShowCaller(bShowCaller bool) {
+	loggerInst.SetShowCaller(bShowCaller)
 }
 
 func LogArgs(a ...interface{}) []interface{} {
@@ -139,7 +145,8 @@ func SetPrintFunc(printFunc func(lv LogLv, logStr string)) {
 //    log config
 //========================
 type LogConf struct {
-	Level int `json:"level"`
+	Level        int  `json:"level"`
+	IsShowCaller bool `json:"is_show_caller"`
 	// IsPowerShellRun bool   `json:"power_shell_run"`
 	IsDump        bool   `json:"is_dump"`
 	DumpPath      string `json:"dump_path"`
@@ -150,6 +157,7 @@ type LogConf struct {
 
 func ConfigLogger(cfg *LogConf, printFunc func(lv LogLv, logStr string)) {
 	SetLogLevel(cfg.Level)
+	SetShowCaller(cfg.IsShowCaller)
 	SetPrintFunc(printFunc)
 	// if cfg.IsPowerShellRun {
 	// 	SetPowerShellMode()
@@ -220,6 +228,7 @@ type LogInfo struct {
 
 type logger struct {
 	level          LogLv
+	bShowCaller    bool
 	bDebugSwitchOn bool
 	printFunc      func(lv LogLv, logStr string)
 	bDumpOpen      bool
@@ -240,6 +249,7 @@ type logger struct {
 
 var loggerInst = &logger{
 	level:          LOG_LV_DEBUG,
+	bShowCaller:    false,
 	bDebugSwitchOn: false,
 	printFunc:      nil,
 	bDumpOpen:      false,
@@ -260,6 +270,10 @@ var loggerInst = &logger{
 
 func (l *logger) SetLevel(lv LogLv) {
 	l.level = lv
+}
+
+func (l *logger) SetShowCaller(bShowCaller bool) {
+	l.bShowCaller = bShowCaller
 }
 
 // func (l *logger) SetPowerShellMode() {
@@ -337,6 +351,13 @@ func (l *logger) Detail(lv LogLv, logs [][]interface{}) {
 // }
 
 func (l *logger) printLog(lv LogLv, tag string, logArgs []interface{}, bDetail bool) {
+	if l.bShowCaller {
+		_, file, line, _ := runtime.Caller(3)
+		callerInfos := []interface{}{"[", file, " ", strconv.Itoa(line), "]  "}
+		logArgs = append(callerInfos, logArgs...)
+		tag = ""
+	}
+
 	l.pushLog(lv, tag, logArgs, bDetail)
 
 	if l.bDumpOpen && l.needDump() {
@@ -463,11 +484,13 @@ func (l *logger) buildLogStr(info *LogInfo) string {
 		builder.WriteRune(' ')
 
 		// tag
-		builder.WriteRune('[')
-		builder.WriteString(info.Tag)
-		builder.WriteRune(']')
-		builder.WriteRune(' ')
-		builder.WriteRune(' ')
+		if len(info.Tag) > 0 {
+			builder.WriteRune('[')
+			builder.WriteString(info.Tag)
+			builder.WriteRune(']')
+			builder.WriteRune(' ')
+			builder.WriteRune(' ')
+		}
 	}
 
 	// msg
