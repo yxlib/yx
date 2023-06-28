@@ -351,7 +351,7 @@ func (l *logger) Detail(lv LogLv, logs [][]interface{}) {
 // }
 
 func (l *logger) printLog(lv LogLv, tag string, logArgs []interface{}, bDetail bool) {
-	if l.bShowCaller {
+	if l.bShowCaller || lv == LOG_LV_WARN || lv == LOG_LV_ERROR {
 		_, file, line, _ := runtime.Caller(3)
 		callerInfos := []interface{}{"[", file, " ", strconv.Itoa(line), "]  "}
 		logArgs = append(callerInfos, logArgs...)
