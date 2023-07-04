@@ -4,6 +4,10 @@
 
 package yx
 
+import (
+	"runtime"
+)
+
 type ErrCatcher struct {
 	className string
 }
@@ -70,12 +74,16 @@ func (c *ErrCatcher) DeferThrow(methodName string, errRef *error) {
 type InvokeInfo struct {
 	className  string
 	methodName string
+	filePath   string
+	fileLine   int
 }
 
-func NewInvokeInfo(className string, methodName string) *InvokeInfo {
+func NewInvokeInfo(className string, methodName string, filePath string, fileLine int) *InvokeInfo {
 	return &InvokeInfo{
 		className:  className,
 		methodName: methodName,
+		filePath:   filePath,
+		fileLine:   fileLine,
 	}
 }
 
@@ -108,7 +116,7 @@ func (c *errCatcher) CatchError(className string, methodName string, err error) 
 		return
 	}
 
-	loggerInst.E("ErrCatcher", "Catch Error !!!")
+	// loggerInst.E("ErrCatcher", "Catch Error !!!")
 
 	logs := make([][]interface{}, 0)
 	logs = c.beginPrintError(err, logs)
@@ -130,16 +138,17 @@ func (c *errCatcher) printInvokeStack(className string, methodName string, stack
 	mark := "|__ "
 	for i, info := range stack {
 		if i == 0 {
-			log = LogArgs("[S]", blanks, info.className, ".", info.methodName, "()")
+			log = LogArgs("[S]", blanks, info.className, ".", info.methodName, "() ", info.filePath, ":", info.fileLine)
 		} else {
-			log = LogArgs("[S]", blanks, mark, info.className, ".", info.methodName, "()")
+			log = LogArgs("[S]", blanks, mark, info.className, ".", info.methodName, "() ", info.filePath, ":", info.fileLine)
 		}
 
 		logs = append(logs, log)
 		blanks += "  "
 	}
 
-	logs = append(logs, LogArgs("[S]", blanks, mark, className, ".", methodName, "()"))
+	_, file, line, _ := runtime.Caller(3)
+	logs = append(logs, LogArgs("[S]", blanks, mark, className, ".", methodName, "() ", file, ":", line))
 	return logs
 }
 
@@ -169,7 +178,8 @@ func (c *errCatcher) pushError(className string, methodName string, err error) {
 		stack = make(InvokeStack, 0)
 	}
 
-	info := NewInvokeInfo(className, methodName)
+	_, file, line, _ := runtime.Caller(3)
+	info := NewInvokeInfo(className, methodName, file, line)
 	c.mapErr2InvokeStack[err] = append(stack, info)
 }
 

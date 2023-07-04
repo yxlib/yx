@@ -210,6 +210,100 @@ func (l *Logger) Ln() {
 	loggerInst.Ln()
 }
 
+//========================
+//   IndependentLogger
+//========================
+type IndependentLogger struct {
+	Logger
+
+	loggerImpl *logger
+}
+
+func NewIndependentLogger(tag string) *IndependentLogger {
+	l := &IndependentLogger{
+		loggerImpl: newLoggerImpl(),
+	}
+
+	l.tag = tag
+	return l
+}
+
+// Print debug log.
+func (l *IndependentLogger) D(a ...interface{}) {
+	l.loggerImpl.D(l.tag, a...)
+}
+
+// Print infomation log.
+func (l *IndependentLogger) I(a ...interface{}) {
+	l.loggerImpl.I(l.tag, a...)
+}
+
+// Print warn log.
+func (l *IndependentLogger) W(a ...interface{}) {
+	l.loggerImpl.W(l.tag, a...)
+}
+
+// Print error log.
+func (l *IndependentLogger) E(a ...interface{}) {
+	l.loggerImpl.E(l.tag, a...)
+}
+
+// Print detail log.
+func (l *IndependentLogger) Detail(lv LogLv, logs [][]interface{}) {
+	l.loggerImpl.Detail(lv, logs)
+}
+
+func (l *IndependentLogger) Ln() {
+	l.loggerImpl.Ln()
+}
+
+func (l *IndependentLogger) StartLogger() {
+	go l.loggerImpl.loop()
+}
+
+func (l *IndependentLogger) StopLogger() {
+	l.loggerImpl.stop()
+}
+
+func (l *IndependentLogger) StartDumpLog(file string, dumpFileSize int, dumpThreshold int, dumpIntervalMs uint32) {
+	l.loggerImpl.startDump(file, dumpFileSize, dumpThreshold, dumpIntervalMs)
+}
+
+// Start dump log by default params.
+// @param file, the relative/full path of a file.
+func (l *IndependentLogger) StartDumpLogDefault(file string) {
+	l.loggerImpl.startDump(file, LOG_DEFAULT_DUMP_SIZE, LOG_DEFAULT_DUMP_THRESHOLD, LOG_DEFAULT_DUMP_INTV)
+}
+
+// Stop dump log.
+func (l *IndependentLogger) StopDumpLog() {
+	l.loggerImpl.stopDump()
+}
+
+// Set log level.
+// @param lv, the level to begin print.
+func (l *IndependentLogger) SetLogLevel(lv LogLv) {
+	l.loggerImpl.SetLevel(lv)
+}
+
+func (l *IndependentLogger) SetShowCaller(bShowCaller bool) {
+	l.loggerImpl.SetShowCaller(bShowCaller)
+}
+
+func (l *IndependentLogger) SetPrintFunc(printFunc func(lv LogLv, logStr string)) {
+	l.loggerImpl.SetPrintFunc(printFunc)
+}
+
+func (l *IndependentLogger) ConfigLogger(cfg *LogConf, printFunc func(lv LogLv, logStr string)) {
+	l.SetLogLevel(cfg.Level)
+	l.SetShowCaller(cfg.IsShowCaller)
+	l.SetPrintFunc(printFunc)
+
+	if cfg.IsDump {
+		l.StartDumpLog(cfg.DumpPath, cfg.DumpFileSize, cfg.DumpThreshold, cfg.DumpInterval)
+	}
+}
+
 // // Print ln.
 // func (l *Logger) Ln() {
 // 	loggerInst.Ln()
@@ -247,25 +341,29 @@ type logger struct {
 	evtStopSucc   *Event
 }
 
-var loggerInst = &logger{
-	level:          LOG_LV_DEBUG,
-	bShowCaller:    false,
-	bDebugSwitchOn: false,
-	printFunc:      nil,
-	bDumpOpen:      false,
-	strDumpFile:    "",
-	dumpFileSno:    0,
-	dumpFileSize:   LOG_DEFAULT_DUMP_SIZE,
-	dumpThreshold:  LOG_DEFAULT_DUMP_THRESHOLD,
-	dumpIntervalMs: LOG_DEFAULT_DUMP_INTV,
-	// queLogs:         make(chan string, MAX_LOG_CACHE_SIZE),
-	// lck:           &sync.Mutex{},
-	lck:           NewFastLock(),
-	queLogs:       nil,
-	writeLogs:     nil,
-	evtDumpToFile: NewEvent(),
-	evtStop:       NewEvent(),
-	evtStopSucc:   NewEvent(),
+var loggerInst = newLoggerImpl()
+
+func newLoggerImpl() *logger {
+	return &logger{
+		level:          LOG_LV_DEBUG,
+		bShowCaller:    false,
+		bDebugSwitchOn: false,
+		printFunc:      nil,
+		bDumpOpen:      false,
+		strDumpFile:    "",
+		dumpFileSno:    0,
+		dumpFileSize:   LOG_DEFAULT_DUMP_SIZE,
+		dumpThreshold:  LOG_DEFAULT_DUMP_THRESHOLD,
+		dumpIntervalMs: LOG_DEFAULT_DUMP_INTV,
+		// queLogs:         make(chan string, MAX_LOG_CACHE_SIZE),
+		// lck:           &sync.Mutex{},
+		lck:           NewFastLock(),
+		queLogs:       nil,
+		writeLogs:     nil,
+		evtDumpToFile: NewEvent(),
+		evtStop:       NewEvent(),
+		evtStopSucc:   NewEvent(),
+	}
 }
 
 func (l *logger) SetLevel(lv LogLv) {
@@ -353,7 +451,7 @@ func (l *logger) Detail(lv LogLv, logs [][]interface{}) {
 func (l *logger) printLog(lv LogLv, tag string, logArgs []interface{}, bDetail bool) {
 	if l.bShowCaller || lv == LOG_LV_WARN || lv == LOG_LV_ERROR {
 		_, file, line, _ := runtime.Caller(3)
-		callerInfos := []interface{}{"[", file, " ", strconv.Itoa(line), "]  "}
+		callerInfos := []interface{}{"[", file, ":", strconv.Itoa(line), "]  "}
 		logArgs = append(callerInfos, logArgs...)
 		tag = ""
 	}
